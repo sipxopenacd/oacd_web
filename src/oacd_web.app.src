@@ -1,12 +1,14 @@
-{application, oacd_web,
- [
-  {description, ""},
-  {vsn, "1"},
-  {registered, []},
-  {applications, [
-                  kernel,
-                  stdlib
-                 ]},
-  {mod, { oacd_web_app, []}},
-  {env, []}
- ]}.
+{application, oacd_web, [
+
+{description, "OpenACD Web Plug-in"},
+{vsn, "0.0.1"},
+{registered, []},
+{applications, [
+	kernel,
+	stdlib,
+	cowboy,
+	mimetypes
+]},
+{mod, { oacd_web_app, []}},
+{env, []}
+]}.

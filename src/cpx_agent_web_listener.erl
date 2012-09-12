@@ -39,7 +39,7 @@
 -define(PORT, 5555).
 
 %% api
--export([start/0, start/1, stop/0]).
+-export([start/0, start/1, start_link/0, start_link/1, stop/0]).
 
 -record(state, {http_pid:: pid()}).
 

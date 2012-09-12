@@ -122,7 +122,12 @@ handle_api(login, [UsernameBin, EncryptedPwdBin], #state{conn = undefined} = Sta
 					agent:set_connection(Agent0#agent.source, self()),
 
 					State1 = State#state{conn = AgentConn},
-					{ok, State1};
+					Res = {struct, [
+						{profile, list_to_binary(Profile)},
+						{security_level, Security},
+						{timestamp, util:now()}]
+					},
+					{ok, Res, State1};
 				_ ->
 					{error, <<"INVALID_CREDENTIALS">>,
 						<<"username or password invalid">>, State}
@@ -255,7 +260,8 @@ websocket_login_test_() ->
 		St = #state{nonce= <<"noncey">>, conn = undefined},
 
 		t_assert_success(1, login, [<<"username">>, <<"encryptedpwd">>],
-			St, St#state{conn = conn}),
+			St, [{struct, [{profile, <<"Default">>}, {security_level, agent},
+			{timestamp, 12345}]}], St#state{conn = conn}),
 		?assert(meck:called(agent_auth, auth, ["username", "password"], self())),
 		?assert(meck:called(agent_manager, start_agent, [ExpectAgent], self())),
 		?assert(meck:called(cpx_agent_connection, init, [ExpectAgent#agent{source=AgentPid}], self())),

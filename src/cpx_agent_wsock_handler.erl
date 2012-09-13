@@ -216,9 +216,11 @@ websocket_login_test_() ->
 		meck:unload(util)
 	end, [{"get_nonce", fun() ->
 		State = #state{nonce=undefined},
+		PubKeyEHex = <<"17">>,
+		PubKeyNHex = <<"F1ACA">>,
 		t_assert_success(1, get_nonce, [],
-			State, {struct, [{nonce, <<"noncey">>}, {pubkey_e, 23},
-				{pubkey_n, 989898}]}, State#state{nonce= <<"noncey">>})
+			State, {struct, [{nonce, <<"noncey">>}, {pubkey_e, PubKeyEHex},
+				{pubkey_n, PubKeyNHex}]}, State#state{nonce= <<"noncey">>})
 	end},
 	{"login already logged in", fun() ->
 		t_assert_fail(1, login, [<<"username">>, <<"password">>],

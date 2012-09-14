@@ -85,8 +85,13 @@ websocket_handle(Data, Req, State) ->
 	?DEBUG("Received non-text on ws: ~p", [Data]),
     {ok, Req, State}.
 
+websocket_info({agent, M}, Req, State) ->
+	{_, Out, C} = cpx_agent_connection:encode_cast(State#state.conn, M),
+	?DEBUG("Agent Event: ~p~n Output: ~p", [M, Out]),
+	RespBin = mochijson2:encode(Out),
+	{reply, {text, RespBin}, Req, State#state{conn = C}};
 websocket_info(_Info, Req, State) ->
-    {ok, Req, State}.
+	{ok, Req, State}.
 
 websocket_terminate(_Reason, _Req, _State) ->
     ok.
@@ -291,5 +296,27 @@ websocket_api_test_() ->
 				{<<"args">>, [<<"somearg">>]}]}]))
 	end}]}.
 
+agent_event_test_() ->
+	{setup, fun() ->
+		meck:new(cpx_agent_connection)
+	end,
+	fun(_) ->
+		meck:unload(cpx_agent_connection)
+	end,
+	[{"ok/error event", fun() ->
+		State = #state{conn=conn},
+		RespJ = {struct, []},
+
+		meck:expect(cpx_agent_connection, encode_cast, 2,
+			{ok, RespJ, conn2}),
+
+		?assertEqual(
+			{reply, {text, <<"{}">>}, req, #state{conn=conn2}},
+			websocket_info({agent, some_event}, req, State)
+		),
+
+		?assert(meck:called(cpx_agent_connection, encode_cast, [conn,
+			some_event]))
+	end}]}.
 
 -endif.

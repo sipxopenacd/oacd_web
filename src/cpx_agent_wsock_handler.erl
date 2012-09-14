@@ -104,37 +104,36 @@ handle_api(login, [_, _], #state{nonce = undefined, conn = undefined} = State) -
 	{error, <<"MISSING_NONCE">>, <<"get nonce comes first">>, State};
 handle_api(login, [UsernameBin, EncryptedPwdBin], #state{conn = undefined} = State) ->
 	EncryptedPwd = binary_to_list(EncryptedPwdBin),
+
+	InvalidCredsError = {error, <<"INVALID_CREDENTIALS">>,
+		<<"username or password invalid">>, State},
+
 	case catch util:decrypt_password(EncryptedPwd) of
 		{ok, Decrypted} ->
 			Username = binary_to_list(UsernameBin),
 			Nonce = binary_to_list(State#state.nonce),
-
 			case catch lists:split(length(Nonce), Decrypted) of
 				{Nonce, Password} ->
-					{allow, Id, Skills, Security, Profile} =
-						agent_auth:auth(Username, Password),
-					Agent = #agent{id = Id, login = Username,
-						skills = Skills, profile = Profile,
-						security_level = Security},
-					{ok, APid} = agent_manager:start_agent(Agent),
-					Agent0 = Agent#agent{source = APid},
-					{ok, AgentConn} = cpx_agent_connection:init(Agent0),
-					agent:set_connection(Agent0#agent.source, self()),
-
-					State1 = State#state{conn = AgentConn},
-					Res = {struct, [
-						{profile, list_to_binary(Profile)},
-						{security_level, Security},
-						{timestamp, util:now()}]
-					},
-					{ok, Res, State1};
+					case cpx_agent_connection:login(Username, Password) of
+						{ok, Agent, Conn} ->
+							State1 = State#state{conn = Conn},
+							Res = {struct, [
+								{profile, list_to_binary(Agent#agent.profile)},
+								{security_level, Agent#agent.security_level},
+								{timestamp, util:now()}]
+							},
+							{ok, Res, State1};
+						{error, deny} ->
+							InvalidCredsError;
+						{error, duplicate} ->
+							{error, <<"DUPLICATE_CONNECTION">>,
+								<<"agent already logged in">>, State}
+					end;
 				_ ->
-					{error, <<"INVALID_CREDENTIALS">>,
-						<<"username or password invalid">>, State}
+					InvalidCredsError
 			end;
 		_ ->
-			{error, <<"INVALID_CREDENTIALS">>,
-				<<"username or password invalid">>, State}
+			InvalidCredsError
 	end;
 handle_api(login, [_, _], State) ->
 	{error, <<"DUP_LOGIN">>, <<"already logged in">>, State};
@@ -204,15 +203,9 @@ websocket_login_test_() ->
 			(_) -> {error, decrypt_failed} end),
 		meck:expect(util, now, 0, 12345),
 
-		meck:new(agent_auth),
-		meck:new(agent_manager),
-		meck:new(cpx_agent_connection),
-		meck:new(agent)
+		meck:new(cpx_agent_connection)
 	end, fun(_) ->
-		meck:unload(agent),
 		meck:unload(cpx_agent_connection),
-		meck:unload(agent_manager),
-		meck:unload(agent_auth),
 		meck:unload(util)
 	end, [{"get_nonce", fun() ->
 		State = #state{nonce=undefined},
@@ -247,27 +240,34 @@ websocket_login_test_() ->
 			<<"username or password invalid">>)
 	end},
 	{"login success", fun() ->
-		AgentPid = spawn(fun() -> receive _ -> ok end end),
-		ExpectAgent = #agent{id = "agentId", login = "username", skills = [],
+		Agent = #agent{id = "agentId", login = "username", skills = [],
 						profile = "Default", security_level = agent},
 
-		meck:expect(util, decrypt_password, 1, {ok, <<"nonceypassword">>}),
-
-		%% TODO move all of these things to cpx_agent_connection
-		meck:expect(agent_auth, auth, 2, {allow, "agentId", [], agent, "Default"}),
-		meck:expect(agent_manager, start_agent, 1, {ok, AgentPid}),
-		meck:expect(cpx_agent_connection, init, 1, {ok, conn}),
-		meck:expect(agent, set_connection, 2, ok),
+		meck:expect(util, decrypt_password, 1, {ok, "nonceypassword"}),
+		meck:expect(cpx_agent_connection, login, 2, {ok, Agent, conn}),
 
 		St = #state{nonce= <<"noncey">>, conn = undefined},
 
 		t_assert_success(1, login, [<<"username">>, <<"encryptedpwd">>],
-			St, [{struct, [{profile, <<"Default">>}, {security_level, agent},
-			{timestamp, 12345}]}], St#state{conn = conn}),
-		?assert(meck:called(agent_auth, auth, ["username", "password"], self())),
-		?assert(meck:called(agent_manager, start_agent, [ExpectAgent], self())),
-		?assert(meck:called(cpx_agent_connection, init, [ExpectAgent#agent{source=AgentPid}], self())),
-		?assert(meck:called(agent, set_connection, [AgentPid, self()], self()))
+			St, {struct, [{profile, <<"Default">>}, {security_level, agent},
+			{timestamp, 12345}]}, St#state{conn = conn}),
+		?assert(meck:called(cpx_agent_connection, login, ["username", "password"], self()))
+	end},
+	{"login deny", fun() ->
+		meck:expect(util, decrypt_password, 1, {ok, "nonceypassword"}),
+		meck:expect(cpx_agent_connection, login, 2, {error, deny}),
+
+		t_assert_fail(1, login, [<<"username">>, <<"cantdecrypt">>],
+			#state{nonce= <<"noncey">>}, <<"INVALID_CREDENTIALS">>,
+			<<"username or password invalid">>)
+	end},
+	{"login duplicate", fun() ->
+		meck:expect(util, decrypt_password, 1, {ok, "nonceypassword"}),
+		meck:expect(cpx_agent_connection, login, 2, {error, duplicate}),
+
+		t_assert_fail(1, login, [<<"username">>, <<"cantdecrypt">>],
+			#state{nonce= <<"noncey">>}, <<"DUPLICATE_CONNECTION">>,
+			<<"agent already logged in">>)
 	end}
 	]}.
 

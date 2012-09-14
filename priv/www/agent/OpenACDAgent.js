@@ -232,6 +232,7 @@ OpenACD.Agent.prototype.setSkew = function(timestamp){
 */
 OpenACD.Agent.prototype._handleServerCommand = function(datalist){
 	for(var i = 0; i < datalist.length; i++){
+		console.log(datalist[i].command);
 		 switch (datalist[i].command){
 			case "pong":
 				this.setSkew(datalist[i].timestamp);
@@ -437,18 +438,23 @@ OpenACD.Agent.prototype.connect = function() {
 
 		var j = JSON.parse(e.data);
 
-		var reqId = j.request_id;
+		if (j.request_id !== undefined) {
+			var reqId = j.request_id;
 
-		if (self.cbks[reqId] !== undefined) {
-			var success = self.cbks[reqId].success;
-			var failure = self.cbks[reqId].failure;
+			if (self.cbks[reqId] !== undefined) {
+				var success = self.cbks[reqId].success;
+				var failure = self.cbks[reqId].failure;
 
-			if (j.success && success !== undefined)
-				success(j.result);
-			else if (!j.success && failure !== undefined) {
-				failure(j.errcode, j.message);
+				if (j.success && success !== undefined)
+					success(j.result);
+				else if (!j.success && failure !== undefined) {
+					failure(j.errcode, j.message);
+				}
+
 			}
-
+		} else if (j.command !== undefined) {
+			console.log("applying command");
+			self._handleServerCommand([j]);
 		}
 	};
 }

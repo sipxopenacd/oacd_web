@@ -85,6 +85,8 @@ websocket_handle(Data, Req, State) ->
 	?DEBUG("Received non-text on ws: ~p", [Data]),
     {ok, Req, State}.
 
+websocket_info(wsock_shutdown, Req, State) ->
+	{shutdown, Req, State};
 websocket_info({agent, M}, Req, State) ->
 	{_, Out, C} = cpx_agent_connection:encode_cast(State#state.conn, M),
 	?DEBUG("Agent Event: ~p~n Output: ~p", [M, Out]),
@@ -198,6 +200,7 @@ t_assert_fail(ReqId, Fun, Args, State, ErrCode, Message) ->
 	?assertEqual(false, GetVal(<<"success">>)),
 	?assertEqual(ErrCode, GetVal(<<"errcode">>)),
 	?assertEqual(Message, GetVal(<<"message">>)).
+
 
 websocket_login_test_() ->
 	{setup, fun() ->
@@ -318,5 +321,9 @@ agent_event_test_() ->
 		?assert(meck:called(cpx_agent_connection, encode_cast, [conn,
 			some_event]))
 	end}]}.
+
+shutdown_test() ->
+	%% TODO clean-ups
+	?assertEqual({shutdown, req, #state{}}, websocket_info(wsock_shutdown, req, #state{})).
 
 -endif.

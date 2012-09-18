@@ -73,6 +73,12 @@ websocket_handle({text, Msg}, Req, State) ->
 					{[{request_id, ReqId},
 						{success, false},
 						{errcode, ErrCode},
+						{message, ErrMessage}], St};
+				{exit, ErrCode, ErrMessage, St} ->
+					self() ! wsock_shutdown,
+					{[{request_id, ReqId},
+						{success, false},
+						{errcode, ErrCode},
 						{message, ErrMessage}], St}
 			end,
 			{mochijson2:encode({struct, RespProps}), State2}
@@ -112,7 +118,7 @@ handle_api(login, [_, _], #state{nonce = undefined, conn = undefined} = State) -
 handle_api(login, [UsernameBin, EncryptedPwdBin], #state{conn = undefined} = State) ->
 	EncryptedPwd = binary_to_list(EncryptedPwdBin),
 
-	InvalidCredsError = {error, <<"INVALID_CREDENTIALS">>,
+	InvalidCredsError = {exit, <<"INVALID_CREDENTIALS">>,
 		<<"username or password invalid">>, State},
 
 	case catch util:decrypt_password(EncryptedPwd) of
@@ -143,7 +149,7 @@ handle_api(login, [UsernameBin, EncryptedPwdBin], #state{conn = undefined} = Sta
 			InvalidCredsError
 	end;
 handle_api(login, [_, _], State) ->
-	{error, <<"DUP_LOGIN">>, <<"already logged in">>, State};
+	{exit, <<"DUP_LOGIN">>, <<"already logged in">>, State};
 
 handle_api(_, _, _) ->
 	{error, not_local}.
@@ -201,6 +207,16 @@ t_assert_fail(ReqId, Fun, Args, State, ErrCode, Message) ->
 	?assertEqual(ErrCode, GetVal(<<"errcode">>)),
 	?assertEqual(Message, GetVal(<<"message">>)).
 
+t_assert_fail_shutdown(ReqId, Fun, Args, State, ErrCode, Message) ->
+	t_assert_fail(ReqId, Fun, Args, State, ErrCode, Message),
+	Shutdown = receive
+		wsock_shutdown -> true
+	after
+		10 -> false
+	end,
+
+	?assert(Shutdown).
+
 
 websocket_login_test_() ->
 	{setup, fun() ->
@@ -229,21 +245,21 @@ websocket_login_test_() ->
 			<<"already logged in">>)
 	end},
 	{"login w/o nonce", fun() ->
-		t_assert_fail(1, login, [<<"username">>, <<"password">>],
+		t_assert_fail_shutdown(1, login, [<<"username">>, <<"password">>],
 			#state{nonce=undefined}, <<"MISSING_NONCE">>,
 			<<"get nonce comes first">>)
 	end},
 	{"login decrypt fail", fun() ->
 		meck:expect(util, decrypt_password, 1, {error, decrypt_fail}),
 
-		t_assert_fail(1, login, [<<"username">>, <<"cantdecrypt">>],
+		t_assert_fail_shutdown(1, login, [<<"username">>, <<"cantdecrypt">>],
 			#state{nonce= <<"noncey">>}, <<"INVALID_CREDENTIALS">>,
 			<<"username or password invalid">>)
 	end},
 	{"login wrong salt", fun() ->
 		meck:expect(util, decrypt_password, 1, {ok, <<"wrongnoncepassword">>}),
 
-		t_assert_fail(1, login, [<<"username">>, <<"cantdecrypt">>],
+		t_assert_fail_shutdown(1, login, [<<"username">>, <<"cantdecrypt">>],
 			#state{nonce= <<"noncey">>}, <<"INVALID_CREDENTIALS">>,
 			<<"username or password invalid">>)
 	end},
@@ -265,7 +281,7 @@ websocket_login_test_() ->
 		meck:expect(util, decrypt_password, 1, {ok, "nonceypassword"}),
 		meck:expect(cpx_agent_connection, login, 2, {error, deny}),
 
-		t_assert_fail(1, login, [<<"username">>, <<"cantdecrypt">>],
+		t_assert_fail_shutdown(1, login, [<<"username">>, <<"cantdecrypt">>],
 			#state{nonce= <<"noncey">>}, <<"INVALID_CREDENTIALS">>,
 			<<"username or password invalid">>)
 	end},

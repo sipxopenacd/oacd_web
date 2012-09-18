@@ -426,41 +426,58 @@ OpenACD.Agent.states = [
 	"wrapup"
 ];
 
-OpenACD.Agent.prototype.connect = function() {
+OpenACD.Agent.prototype.connect = function(init) {
 	var loc = window.location;
 	var url = 'ws://' + loc.host + loc.pathname + 'wsock';
 	this.sock = new WebSocket(url); // TODO might not be ready for sending yet
+	this.apiCtr = 0;
 
 	var self = this;
 
-	this.sock.onmessage = function(e) {
-		console.log('Received: ' + e.data);
-
-		var j = JSON.parse(e.data);
-
-		if (j.request_id !== undefined) {
-			var reqId = j.request_id;
-
-			if (self.cbks[reqId] !== undefined) {
-				var success = self.cbks[reqId].success;
-				var failure = self.cbks[reqId].failure;
-
-				if (j.success && success !== undefined)
-					success(j.result);
-				else if (!j.success && failure !== undefined) {
-					failure(j.errcode, j.message);
-				}
-
-			}
-		} else if (j.command !== undefined) {
-			console.log("applying command");
-			self._handleServerCommand([j]);
+	if (typeof(init) === "function") {
+		this.sock.onopen = function(e) {
+			console.log('Connected');
+			init.apply(self, e);
 		}
+	}
+
+	this.sock.onmessage = function(e) {
+		self._handleMessage(e);
 	};
+
+	this.sock.onclose = function(e) {
+		self._handleDisconnect(e);
+	}
 }
 
 OpenACD.Agent.prototype._handleMessage = function(e) {
+	console.log('Received: ' + e.data);
 
+	var j = JSON.parse(e.data);
+
+	if (j.request_id !== undefined) {
+		var reqId = j.request_id;
+
+		if (this.cbks[reqId] !== undefined) {
+			var success = this.cbks[reqId].success;
+			var failure = this.cbks[reqId].failure;
+
+			if (j.success && success !== undefined)
+				success(j.result);
+			else if (!j.success && failure !== undefined) {
+				failure(j.errcode, j.message);
+			}
+
+		}
+	} else if (j.command !== undefined) {
+		console.log("applying command");
+		this._handleServerCommand([j]);
+	}
+}
+
+OpenACD.Agent.prototype._handleDisconnect = function(e) {
+	this.loggedIn = false;
+	dojo.publish("OpenACD/Agent/logout", ["Disconnected"]);
 }
 
 /**
@@ -495,7 +512,6 @@ OpenACD.Agent.prototype.agentApi = function(func, options){
 	if (typeof(options) === "object" &&
 			(options.success !== undefined ||
 			options.failure !== undefined)) {
-		console.log('here');
 		this.cbks[id] = options;
 	}
 
@@ -727,7 +743,16 @@ OpenACD.Agent.prototype.login = function(successCB, failCB, errCB){
 		success:this.makeInternalPublishCb("salt/success"),
 		failure:this.makeInternalPublishCb("salt/failure"),
 	};
-	this.agentApi("get_nonce", getSaltOpts);
+
+	if (this.isConnected()) {
+		this.agentApi("get_nonce", getSaltOpts);
+	} else {
+		this.connect(function() {this.agentApi("get_nonce", getSaltOpts)});
+	}
+}
+
+OpenACD.Agent.prototype.isConnected = function() {
+	return this.sock !== null && this.sock.readyState === WebSocket.OPEN;
 }
 
 /**

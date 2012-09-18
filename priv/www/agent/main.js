@@ -700,7 +700,7 @@ dojo.addOnLoad(function(){
 
 	// Always start a new session
 	// window.agentConnection.checkCookie(checkCookieOpts);
-	window.agentConnection.connect();
+	//window.agentConnection.connect();
 
 	dojo.byId("profiledisp").stateChanger = dojo.subscribe("OpenACD/Agent/profile", function(data){
 		var node = dojo.byId("profiledisp");

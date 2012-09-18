@@ -79,8 +79,6 @@ websocket_handle({text, Msg}, Req, State) ->
 			end,
 			{mochijson2:encode({struct, RespProps}), State2}
 	end,
-
-
 	{reply, {text, RespBin}, Req, State1};
 
 websocket_handle(Data, Req, State) ->
@@ -93,8 +91,15 @@ websocket_info({agent, M}, Req, State) ->
 	{E, Out, C} = cpx_agent_connection:encode_cast(State#state.conn, M),
 	maybe_exit(E),
 	?DEBUG("Agent Event: ~p~n Output: ~p", [M, Out]),
-	RespBin = mochijson2:encode(Out),
-	{reply, {text, RespBin}, Req, State#state{conn = C}};
+
+	State1 = State#state{conn = C},
+	case Out of
+		undefined ->
+			{ok, Req, State1};
+		_ ->
+			RespBin = mochijson2:encode(Out),
+			{reply, {text, RespBin}, Req, State1}
+	end;
 websocket_info(_Info, Req, State) ->
 	{ok, Req, State}.
 
@@ -341,6 +346,18 @@ agent_event_test_() ->
 
 		?assertEqual(
 			{reply, {text, <<"{}">>}, req, #state{conn=conn2}},
+			websocket_info({agent, some_event}, req, State)
+		),
+
+		?assert(meck:called(cpx_agent_connection, encode_cast, [conn,
+			some_event]))
+	end},
+	{"ok/error event no resp", fun() ->
+		meck:expect(cpx_agent_connection, encode_cast, 2,
+			{ok, undefined, conn2}),
+
+		?assertEqual(
+			{ok, req, #state{conn=conn2}},
 			websocket_info({agent, some_event}, req, State)
 		),
 

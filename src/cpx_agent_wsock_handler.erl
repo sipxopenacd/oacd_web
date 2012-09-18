@@ -58,7 +58,8 @@ websocket_handle({text, Msg}, Req, State) ->
 	ApiRes = handle_api(F, Args, State),
 	{RespBin, State1} = case ApiRes of
 		{error, not_local} ->
-			{_, Out, C} = cpx_agent_connection:handle_json(State#state.conn, J),
+			{E, Out, C} = cpx_agent_connection:handle_json(State#state.conn, J),
+			maybe_exit(E),
 			{Out, State#state{conn = C}};
 		_ ->
 			{RespProps, State2} = case ApiRes of
@@ -69,13 +70,8 @@ websocket_handle({text, Msg}, Req, State) ->
 					{[{request_id, ReqId},
 						{success, true},
 						{result, Result}], St};
-				{error, ErrCode, ErrMessage, St} ->
-					{[{request_id, ReqId},
-						{success, false},
-						{errcode, ErrCode},
-						{message, ErrMessage}], St};
-				{exit, ErrCode, ErrMessage, St} ->
-					self() ! wsock_shutdown,
+				{E, ErrCode, ErrMessage, St} ->
+					maybe_exit(E),
 					{[{request_id, ReqId},
 						{success, false},
 						{errcode, ErrCode},
@@ -94,7 +90,8 @@ websocket_handle(Data, Req, State) ->
 websocket_info(wsock_shutdown, Req, State) ->
 	{shutdown, Req, State};
 websocket_info({agent, M}, Req, State) ->
-	{_, Out, C} = cpx_agent_connection:encode_cast(State#state.conn, M),
+	{E, Out, C} = cpx_agent_connection:encode_cast(State#state.conn, M),
+	maybe_exit(E),
 	?DEBUG("Agent Event: ~p~n Output: ~p", [M, Out]),
 	RespBin = mochijson2:encode(Out),
 	{reply, {text, RespBin}, Req, State#state{conn = C}};
@@ -154,6 +151,14 @@ handle_api(login, [_, _], State) ->
 handle_api(_, _, _) ->
 	{error, not_local}.
 
+%% Internal
+
+-spec maybe_exit(atom()) -> any().
+maybe_exit(exit) ->
+	self() ! wsock_shutdown;
+maybe_exit(_) ->
+	ok.
+
 -ifdef(TEST).
 
 init_test() ->
@@ -209,12 +214,7 @@ t_assert_fail(ReqId, Fun, Args, State, ErrCode, Message) ->
 
 t_assert_fail_shutdown(ReqId, Fun, Args, State, ErrCode, Message) ->
 	t_assert_fail(ReqId, Fun, Args, State, ErrCode, Message),
-	Shutdown = receive
-		wsock_shutdown -> true
-	after
-		10 -> false
-	end,
-
+	Shutdown = receive wsock_shutdown -> true after 10 -> false end,
 	?assert(Shutdown).
 
 
@@ -313,9 +313,22 @@ websocket_api_test_() ->
 			{struct, [{<<"request_id">>, 1},
 				{<<"function">>, <<"some_api_fun">>},
 				{<<"args">>, [<<"somearg">>]}]}]))
+	end},
+	{"exit api", fun() ->
+		meck:expect(cpx_agent_connection, handle_json, 2,
+			{exit, <<"{\"request_id\":1,\"success\":false,\"errcode\":\"E\",\"message\":\"M\"}">>, conn2}),
+		t_assert_fail_shutdown(1, some_api_fun, [<<"somearg">>],
+			St, <<"E">>, <<"M">>),
+		?assert(meck:called(cpx_agent_connection, handle_json, [conn,
+			{struct, [{<<"request_id">>, 1},
+				{<<"function">>, <<"some_api_fun">>},
+				{<<"args">>, [<<"somearg">>]}]}]))
 	end}]}.
 
 agent_event_test_() ->
+	State = #state{conn=conn},
+	RespJ = {struct, []},
+
 	{setup, fun() ->
 		meck:new(cpx_agent_connection)
 	end,
@@ -323,9 +336,6 @@ agent_event_test_() ->
 		meck:unload(cpx_agent_connection)
 	end,
 	[{"ok/error event", fun() ->
-		State = #state{conn=conn},
-		RespJ = {struct, []},
-
 		meck:expect(cpx_agent_connection, encode_cast, 2,
 			{ok, RespJ, conn2}),
 
@@ -336,7 +346,22 @@ agent_event_test_() ->
 
 		?assert(meck:called(cpx_agent_connection, encode_cast, [conn,
 			some_event]))
-	end}]}.
+	end},
+	{"exit event", fun() ->
+		meck:expect(cpx_agent_connection, encode_cast, 2,
+			{exit, RespJ, conn2}),
+
+		?assertEqual(
+			{reply, {text, <<"{}">>}, req, #state{conn=conn2}},
+			websocket_info({agent, some_event}, req, State)
+		),
+
+		?assert(meck:called(cpx_agent_connection, encode_cast, [conn,
+			some_event])),
+		Shutdown = receive wsock_shutdown -> true after 10 -> false end,
+		?assert(Shutdown)
+	end}
+	]}.
 
 shutdown_test() ->
 	%% TODO clean-ups

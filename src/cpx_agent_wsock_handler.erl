@@ -52,7 +52,7 @@ websocket_handle({text, Msg}, Req, State) ->
 	?DEBUG("Received on ws: ~p", [Msg]),
 	J = {struct, P} = mochijson2:decode(Msg),
 	GetVal = fun(N) -> proplists:get_value(N, P) end,
-	F = list_to_existing_atom(binary_to_list(GetVal(<<"function">>))),
+	F = (catch binary_to_existing_atom(GetVal(<<"function">>), utf8)),
 	Args = GetVal(<<"args">>),
 	ReqId = GetVal(<<"request_id">>),
 	ApiRes = handle_api(F, Args, State),

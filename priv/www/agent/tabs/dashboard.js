@@ -3,32 +3,32 @@ if(typeof(dashboard) == 'undefined'){
 	var head = dojo.query('head')[0];
 	head.appendChild(link);
 	link.rel = 'stylesheet';
-	link.href='/tabs/dashboard.css';
+	link.href='/static/agent/tabs/dashboard.css';
 	link.type = 'text/css';
-	
+
 	dashboard = function(){
 		throw 'NameSpace, not to be instanciated';
 	}
-	
+
 	dashboard.medias = {};
-	
+
 	/*dashboard.filterSupevent = function(supevent){
 		debug(["the subevent", supevent]);
 		if (supevent.type == 'media' || supevent.type == 'queue'){
 			return true;
 		}
-		
+
 		if( (supevent.action == 'drop') && supevent.id.match(/^media-/) ){
 			return true;
 		}
-		
+
 		return false;
 	}*/
-	
+
 	// =====
 	// Media is used for both agents and queues
 	// =====
-	
+
 	dashboard.Media = function(initEvent){
 		this.initialEvent = initEvent;
 		this.created = Math.floor(new Date().getTime() / 1000);
@@ -39,14 +39,14 @@ if(typeof(dashboard) == 'undefined'){
 		this.client = initEvent.details.client;
 		this.status = 'limbo';
 	}
-	
+
 	dashboard.Media.prototype.end = function(cause){
 		this.status = cause;
 		this.ended = Math.floor(new Date().getTime() / 1000);
 	}
-	
+
 	dashboard.getStatus = function(){
-		window.agentConnection.webApi('supervisor', 'status', {
+		window.agentConnection.webApi('supervisor', 'get_acd_status', {
 			success:function(res){
 				//console.log('got status', arguments);
 				var real = [];
@@ -78,13 +78,13 @@ if(typeof(dashboard) == 'undefined'){
 			error:function(res){
 				errMessage(["getting initial status errored", res]);
 			}
-		});	
+		});
 	}
-	
+
 	// =====
 	// Menu Item actions
 	// =====
-	
+
 	dashboard.showMotdDialog = function(nodename){
 		window.agentConnection.webApi('supervisor', 'get_motd', {
 			failure:function(res){
@@ -121,7 +121,7 @@ if(typeof(dashboard) == 'undefined'){
 			}
 		});
 	}
-	
+
 	dashboard.showProblemRecordingDialog = function(){
 		window.agentConnection.webApi('api', 'get_brand_list', {
 			failure:function(res){
@@ -159,9 +159,9 @@ if(typeof(dashboard) == 'undefined'){
 			error: function(res){
 				errMessage(["error loading brands", res]);
 			}
-		});	
+		});
 	}
-	
+
 	dashboard.startProblemRecording = function(clientId){
 		window.agentConnection.webApi('supervisor', 'start_problem_recording', {
 			failure: function(res, msg){
@@ -174,7 +174,7 @@ if(typeof(dashboard) == 'undefined'){
 			}
 		}, clientId);
 	}
-	
+
 	dashboard.now = function(){
 		return Math.floor(new Date().getTime() / 1000);
 	}

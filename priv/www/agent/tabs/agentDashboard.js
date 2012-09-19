@@ -3,9 +3,9 @@ if(typeof(agentDashboard) == 'undefined'){
 	agentDashboard = function(){
 		throw 'NameSpace, not to be instanciated';
 	}
-	
+
 	agentDashboard.profiles = [];
-	
+
 	agentDashboard.makeMenu = function(profileNom, agentNom){
 		var menu = new dijit.Menu({
 			onOpen:function(){
@@ -65,7 +65,7 @@ if(typeof(agentDashboard) == 'undefined'){
 		menu.addChild(new dijit.MenuSeparator());
 		menu.addChild(new dijit.MenuItem({
 			label:'Blab...',
-			onClick:function(){ 
+			onClick:function(){
 				agentDashboard.showBlabDialog('agent', this.getParent().agent.name);
 			}
 		}));
@@ -80,7 +80,7 @@ if(typeof(agentDashboard) == 'undefined'){
 					thisagent.getParent().agent.setProfile(data.profile, data.makePermanent[0]);
 				}
 				dialog.attr('execute', submitSetProf);
-				window.agentConnection.webApi('supervisor', 'get_profiles', {
+				window.agentConnection.webApi('supervisor', 'get_agent_profiles', {
 					failure:function(r){
 						warning(["get_profiles failure", r.message]);
 					},
@@ -91,7 +91,7 @@ if(typeof(agentDashboard) == 'undefined'){
 						}
 						var html = '<select name="profile">';
 						dojo.forEach(r.profiles, function(item){
-							html += '<option>' + item + '</option>';
+							html += '<option>' + item.name + '</option>';
 						});
 						html += '</select>';
 						span.innerHTML = html;
@@ -116,11 +116,11 @@ if(typeof(agentDashboard) == 'undefined'){
 		}));
 		return menu;
 	}
-	
+
 	// ======
 	// Helper class Profile
 	// ======
-	
+
 	agentDashboard.Profile = function(display){
 		this.name = display;
 		this.agents = {};
@@ -134,25 +134,25 @@ if(typeof(agentDashboard) == 'undefined'){
 			this.consumeEvent(event);
 		});
 	}
-	
+
 	agentDashboard.Profile.prototype._decState = function(state){
 		if(! this[state]){
 			this[state] = 0;
 			return true;
 		}
-		
+
 		this[state]--;
 	}
-	
+
 	agentDashboard.Profile.prototype._incState = function(state){
 		if(! this[state]){
 			this[state] = 1;
 			return true;
 		}
-		
+
 		this[state]++;
 	}
-		
+
 	agentDashboard.Profile.prototype.consumeEvent = function(event){
 		if(event.action == 'drop'){
 			if(this.agents[event.name]){
@@ -171,7 +171,7 @@ if(typeof(agentDashboard) == 'undefined'){
 			}
 			return true;
 		}
-		
+
 		if( (event.details.profile == this.name) && ! this.agents[event.name]){
 			var agent = new agentDashboard.Agent(event);
 			this.agents[event.name] = agent;
@@ -187,7 +187,7 @@ if(typeof(agentDashboard) == 'undefined'){
 			dojo.publish('agentDashboard/profile/' + this.name + '/update', [this]);
 			return true;
 		}
-		
+
 		if( (event.details.profile != this.name) && this.agents[event.name]){
 			var agent = this.agents[event.name]
 			this.agentsCount--;
@@ -203,17 +203,17 @@ if(typeof(agentDashboard) == 'undefined'){
 			dojo.publish('agentDashboard/profile/' + this.name + '/update', [this]);
 			return true;
 		}
-		
+
 		if(this.agents[event.name]){
 			var change = this.agents[event.name].consumeEvent(event);
 			this._decState(change.oldState);
 			this._incState(change.newState);
 			dojo.publish('agentDashboard/profile/' + this.name + '/update', [this]);
 		}
-		
+
 		return true;
 	};
-	
+
 	agentDashboard.Profile.prototype._destroyAgentRow = function(agentname){
 		var tbody = dojo.query('#agentDashboardTable *[profile="' + this.name + '"][purpose="agentDisplay"] table')[0];
 		var rows = dojo.query('tr[agent="' + escape(agentname) + '"]', tbody);
@@ -224,11 +224,11 @@ if(typeof(agentDashboard) == 'undefined'){
 			dojo.destroy(rows[i]);
 		}
 	}
-	
+
 	// ======
 	// Helper class Agent
 	// ======
-	
+
 	agentDashboard.Agent = function(initEvent){
 		this.name = initEvent.details.login;
 		this.id = initEvent.name;
@@ -256,7 +256,7 @@ if(typeof(agentDashboard) == 'undefined'){
 		// //this._isWorking = false;
 		// this.lastchange = initEvent.details.lastchange.timestamp;
 	}
-	
+
 	// agentDashboard.Agent.prototype.setWorking = function(event){
 	// 	switch(event.details.state){
 	// 		case this.state:
@@ -271,7 +271,7 @@ if(typeof(agentDashboard) == 'undefined'){
 	// 			this._isWorking = true;
 	// 	}
 	// }
-	
+
 	agentDashboard.Agent.prototype.consumeEvent = function(event){
 		//var oldWorking = this._working;
 		var now = Math.floor(new Date().getTime() / 1000);
@@ -298,7 +298,7 @@ if(typeof(agentDashboard) == 'undefined'){
 		dojo.publish('agentDashboard/agent/' + this.id + '/update', [this]);
 		return out;
 	}
-	
+
 	agentDashboard.Agent.prototype._setStateData = function(details){
 		switch(this.state){
 			case 'released':
@@ -325,7 +325,7 @@ if(typeof(agentDashboard) == 'undefined'){
 				this.statedata = details;
 		}
 	}
-	
+
 	agentDashboard.Agent.prototype.calcUtilPercent = function(){
 		// TODO This is going to be horribly wrong since we have no history.
 		var idle = this._idleing;
@@ -339,7 +339,7 @@ if(typeof(agentDashboard) == 'undefined'){
 		var total = idle + working;
 		return (working / total) * 100;
 	}
-	
+
 	agentDashboard.Agent.prototype.statedataDisplay = function(){
 		switch(this.state){
 			case 'released':
@@ -357,7 +357,7 @@ if(typeof(agentDashboard) == 'undefined'){
 				return '';
 		}
 	}
-	
+
 	agentDashboard.Agent.prototype.spy = function(){
 		window.agentConnection.webApi('supervisor', 'spy', {
 			failure:function(res){
@@ -379,9 +379,9 @@ if(typeof(agentDashboard) == 'undefined'){
 			}
 		};
 
-		window.agentConnection.webApi('supervisor', 'agent_release', callbacks, this.name, released);
-	}	
-	
+		window.agentConnection.webApi('supervisor', 'release_agent', callbacks, this.name, released);
+	}
+
 	agentDashboard.Agent.prototype.setProfile = function(newProf, makePerm){
 		// letting the subscriptions that happen on agent changes deal w/ the repercussions.
 		/*console.log(['das smack', newProf, makePerm]);*/
@@ -393,13 +393,9 @@ if(typeof(agentDashboard) == 'undefined'){
 				errMessage(["set profile errored", res]);
 			}
 		};
-		if(makePerm){
-			window.agentConnection.webApi('supervisor', 'set_profile', callbacks, this.name, newProf, true);
-		} else {
-			window.agentConnection.webApi('supervisor', 'set_profile', callbacks, this.name, newProf);
-		}
+		window.agentConnection.webApi('supervisor', 'set_agent_profile', callbacks, this.name, newProf);
 	}
-	
+
 	agentDashboard.Agent.prototype.kick = function(){
 		window.agentConnection.webApi('supervisor', 'kick_agent', {
 			failure:function(resp, message){
@@ -410,11 +406,11 @@ if(typeof(agentDashboard) == 'undefined'){
 			}
 		}, this.name);
 	}
-	
+
 	// =====
 	// drawing functions
 	// =====
-	
+
 	agentDashboard.drawProfileTable = function(){
 		// Call after fetching the profiles.  Should only need to be done once.
 		for(var i = 0; i < agentDashboard.profiles.length; i++){
@@ -471,7 +467,7 @@ if(typeof(agentDashboard) == 'undefined'){
 			}
 		}
 	}
-	
+
 	agentDashboard.drawAgentTable = function(profCache){
 		var profile = profCache.name;
 		var profileAgentsTr = dojo.create('tr', {'profile': profile, purpose: 'agentDisplay', style:'display:none'});
@@ -481,7 +477,7 @@ if(typeof(agentDashboard) == 'undefined'){
 
 		var widetd = dojo.create('td', {colspan: 6}, profileAgentsTr);
 		var table = dojo.create('table', {'width':'100%'}, dojo.create('div', {'class':'subData'}, widetd));
-		table.innerHTML = '<tr>' + 
+		table.innerHTML = '<tr>' +
 		'<th>name</th>' +
 		'<th>state</th>' +
 //		'<th>time</th>' +
@@ -495,7 +491,7 @@ if(typeof(agentDashboard) == 'undefined'){
 			profileAgentsTr.style.display = 'none';
 		}
 	}
-	
+
 	agentDashboard.drawAgentTableRow = function(profile, agent){
 		var tr = dojo.create('tr', {'agent':escape(agent.id)});//, tbody, 'last');
 		var now = Math.floor(new Date().getTime() / 1000);
@@ -525,11 +521,11 @@ if(typeof(agentDashboard) == 'undefined'){
 		var menu = agentDashboard.makeMenu(profile.name, agent.id);
 		menu.bindDomNode(tr);
 	}
-	
+
 	// =====
 	// Action functions (usual requires server communication)
 	// =====
-	
+
 	agentDashboard.spy = function(agent){
 		window.agentConnection.webApi('supervisor', 'spy', {
 			failure:function(res){
@@ -540,7 +536,7 @@ if(typeof(agentDashboard) == 'undefined'){
 			}
 		}, agent);
 	}
-	
+
 	agentDashboard.showBlabDialog = function(type, target){
 		var dialog = dijit.byId('blabDialog');
 		dialog.attr('title', 'Blab');
@@ -552,7 +548,7 @@ if(typeof(agentDashboard) == 'undefined'){
 		dialog.attr('execute', submitblab);
 		dialog.show();
 	}
-	
+
 	agentDashboard.blab = function(message, type, target){
 		window.agentConnection.webApi('supervisor', 'blab', {
 			success:function(res){
@@ -574,10 +570,10 @@ menu.addChild(new dijit.MenuItem({
 }));
 menu.bindDomNode(dojo.byId('agentDashboardTable').rows[0]);
 
-window.agentConnection.webApi('supervisor', 'get_profiles', {
+window.agentConnection.webApi('supervisor', 'get_agent_profiles', {
 	success:function(res){
 		for(var i = 0; i < res.length; i++){
-			agentDashboard.profiles.push(new agentDashboard.Profile(res[i]));
+			agentDashboard.profiles.push(new agentDashboard.Profile(res[i].name));
 		}
 		agentDashboard.drawProfileTable();
 	},
@@ -606,7 +602,7 @@ agentDashboard.globalTickSub = dojo.subscribe('globaltick', agentDashboard, func
 	if(this.doingTick){
 		return;
 	}
-	
+
 	this.tickCount++;
 	if(this.tickCount % this.refreshRate == 0){
 		this.doingTick = true;

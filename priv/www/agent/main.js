@@ -620,6 +620,7 @@ dojo.addOnLoad(function(){
 		buildReleaseMenu();
 		buildOutboundMenu();
 		buildQueueMenu();
+		buildTabsMenu();
 		// window.agentConnection.agentApi("get_tabs_menu", {});
 		dojo.byId("agentname").innerHTML = confs.username;
 		dojo.byId("profiledisp").innerHTML = dojo.i18n.getLocalization("agentUI", "labels").PROFILE + ":  " + confs.profile;
@@ -969,6 +970,31 @@ dojo.addOnLoad(function(){
 		window.agentConnection.agentApi("get_queue_list", qListOpts);
 	};
 
+	buildTabsMenu = function() {
+		var tabsMenuDij = dijit.byId("Tabsmenu");
+
+		var opts = {
+			success: function(result) {
+				var tabs = result.tabs;
+				var addMenuItem = function(label, href){
+				tabsMenuDij.addChild(new dijit.MenuItem({
+					'label':label,
+					'onClick':function(){loadTab(label, href)}
+				}));
+				};
+				tabsMenuDij.destroyDescendants(false);
+
+				for(tabIndex in tabs){
+					var tabItem = tabs[tabIndex];
+					addMenuItem(tabItem.label, tabItem.href);
+				}
+				dijit.byId('tabsmenubutton').set('disabled', false);
+				console.log('tabs menu event', tabs);
+			}
+		}
+		window.agentConnection.agentApi("get_tabs", opts);
+	}
+
 	dojo.byId("loginerrp").logout = dojo.subscribe("OpenACD/Agent/logout", function(data){
 		if(data === true){
 			dojo.byId("loginerrp").style.display = "none";
@@ -1041,23 +1067,6 @@ dojo.addOnLoad(function(){
 	dijit.byId("main").mediaload = dojo.subscribe("OpenACD/Agent/mediaload", function(eventdata){
 		info(["listening for media load fired:  ", eventdata]);
 		//load_media_tab(eventdata);
-	});
-
-	dijit.byId("Tabsmenu").tabsListLoaded = dojo.subscribe("OpenACD/Agent/set_tabs_menu", function(tabsMenuList){
-		var tabsMenuDij = dijit.byId("Tabsmenu");
-		var addMenuItem = function(label, href){
-			tabsMenuDij.addChild(new dijit.MenuItem({
-				'label':label,
-				'onClick':function(){loadTab(label, href)}
-			}));
-		};
-		tabsMenuDij.destroyDescendants(false);
-		for(tabIndex in tabsMenuList.tabs){
-			var tabItem = tabsMenuList.tabs[tabIndex];
-			addMenuItem(tabItem.label, tabItem.href);
-		}
-		dijit.byId('tabsmenubutton').set('disabled', false);
-		console.log('tabs menu event', tabsMenuList);
 	});
 });
 /*

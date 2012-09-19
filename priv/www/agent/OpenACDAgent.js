@@ -148,6 +148,7 @@ OpenACD.Agent = function(options){
 	this.sock = null;
 	this.cbks = {};
 	this.apiCtr = 0;
+	this.lastErr = null;
 
 
 	if(options.username){
@@ -469,6 +470,8 @@ OpenACD.Agent.prototype._handleMessage = function(e) {
 			}
 
 		}
+
+		this.lastErr = j.message;
 	} else if (j.command !== undefined) {
 		console.log("applying command");
 		this._handleServerCommand([j]);
@@ -477,7 +480,10 @@ OpenACD.Agent.prototype._handleMessage = function(e) {
 
 OpenACD.Agent.prototype._handleDisconnect = function(e) {
 	this.loggedIn = false;
-	dojo.publish("OpenACD/Agent/logout", ["Disconnected"]);
+	var msg = "Disconnected";
+	if (this.lastErr != null)
+		msg = this.lastErr;
+	dojo.publish("OpenACD/Agent/logout", [msg]);
 }
 
 /**
@@ -498,25 +504,11 @@ Make a request for the agent api.
 	agent_web_listener and agent_web_connection.
 */
 OpenACD.Agent.prototype.agentApi = function(func, options){
-	var args =  Array.prototype.slice.call(arguments, 2);
-	var id = this.apiCtr++;
-
-	var request = {
-		request_id: id,
-		function: func,
-		args: args
-	};
-	zopts = options;
-
-	var str = JSON.stringify(request);
-	if (typeof(options) === "object" &&
-			(options.success !== undefined ||
-			options.failure !== undefined)) {
-		this.cbks[id] = options;
+	var args = ['agent'];
+	for(var i = 0; i < arguments.length; i++){
+		args.push(arguments[i]);
 	}
-
-	console.log('Sending: ' + str);
-	this.sock.send(str);
+	this.webApi.apply(this, args);
 }
 
 /**
@@ -564,44 +556,63 @@ making this a fallback.
 	request on the server side.  See the OpenACD documentation for
 	agent_web_listener and agent_web_connection.
 */
-OpenACD.Agent.prototype.webApi = function(api, func, opts){
-	if(! (api == 'api' || api == 'supervisor') ){
-		throw new Error('Unknown api section ' + api);
-	}
-	var defaultOpts = {
-		"success":function(){ return true; },
-		"failure":function(errcode, msg){
-			console.warn("failure for " + func, errcode, msg);
-		},
-		"error":function(res){
-			console.error("error for ", func, res);
-		}
-	}
-	var trueOpts = dojo.mixin(defaultOpts, opts);
-	var loadFunc = function(res){
-		if(res.success === true){
-			return trueOpts.success(res.result);
-		}
-		return trueOpts.failure(res.errcode, res.message);
-	};
-	var args = [];
-	for(var i = 3; i < arguments.length; i++){
-		args.push(arguments[i]);
-	}
-	var xhrOverrides = {
-		url:"/" + api,
-		content:{
-			request:dojo.toJson({
-				"function":func,
-				"args":args
-			})
-		},
-		handleAs:"json",
-		load:loadFunc
-	};
-	var xhrOpts = dojo.mixin(trueOpts, xhrOverrides);
+OpenACD.Agent.prototype.webApi = function(api, func, options){
+	var args =  Array.prototype.slice.call(arguments, 3);
+	var id = this.apiCtr++;
 
-	return dojo.xhrPost.call(this, xhrOpts);
+	var request = {
+		request_id: id,
+		function: func,
+		args: args
+	};
+	zopts = options;
+
+	var str = JSON.stringify(request);
+	if (typeof(options) === "object" &&
+			(options.success !== undefined ||
+			options.failure !== undefined)) {
+		this.cbks[id] = options;
+	}
+
+	console.log('Sending: ' + str);
+	this.sock.send(str);
+	// if(! (api == 'api' || api == 'supervisor') ){
+	// 	throw new Error('Unknown api section ' + api);
+	// }
+	// var defaultOpts = {
+	// 	"success":function(){ return true; },
+	// 	"failure":function(errcode, msg){
+	// 		console.warn("failure for " + func, errcode, msg);
+	// 	},
+	// 	"error":function(res){
+	// 		console.error("error for ", func, res);
+	// 	}
+	// }
+	// var trueOpts = dojo.mixin(defaultOpts, opts);
+	// var loadFunc = function(res){
+	// 	if(res.success === true){
+	// 		return trueOpts.success(res.result);
+	// 	}
+	// 	return trueOpts.failure(res.errcode, res.message);
+	// };
+	// var args = [];
+	// for(var i = 3; i < arguments.length; i++){
+	// 	args.push(arguments[i]);
+	// }
+	// var xhrOverrides = {
+	// 	url:"/" + api,
+	// 	content:{
+	// 		request:dojo.toJson({
+	// 			"function":func,
+	// 			"args":args
+	// 		})
+	// 	},
+	// 	handleAs:"json",
+	// 	load:loadFunc
+	// };
+	// var xhrOpts = dojo.mixin(trueOpts, xhrOverrides);
+
+	// return dojo.xhrPost.call(this, xhrOpts);
 };
 
 /**
@@ -703,12 +714,12 @@ OpenACD.Agent.prototype._handleLoginSuccess = function(results){
 	this.securityLevel = results.security_level;
 	this.timestamp = results.timestamp;
 	// this.poll();
-	try{
+	// try{
 		this.loggedIn = true;
 		dojo.publish("OpenACD/Agent/login", [this]);
-	} catch (err) {
-		console.error("OpenACD/Agent/login", err);
-	}
+	// } catch (err) {
+	// 	console.error("OpenACD/Agent/login", err);
+	// }
 	// window.location.reload();
 }
 

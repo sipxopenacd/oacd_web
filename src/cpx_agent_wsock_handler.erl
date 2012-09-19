@@ -151,6 +151,24 @@ handle_api(login, [UsernameBin, EncryptedPwdBin], #state{conn = undefined} = Sta
 handle_api(login, [_, _], State) ->
 	{exit, <<"DUP_LOGIN">>, <<"already logged in">>, State};
 
+%% TODO add test, avoid dump_state
+handle_api(get_tabs, [], State) ->
+	#agent{source = APid} = cpx_agent_connection:get_agent(State#state.conn),
+	Agent = agent:dump_state(APid),
+
+	Admin = {<<"Dashboard">>, <<"static/agent/tabs/dashboard.html">>},
+	Endpoints = {<<"Endpoints">>, <<"static/agent/tabs/endpoints.html">>},
+	{ok, HookRes} = cpx_hooks:trigger_hooks(agent_web_tabs, [Agent], all),
+	Filtered = [Endpoints | [X || {B1, B2} = X <- HookRes, is_binary(B1), is_binary(B2)]],
+	TabsList = case Agent#agent.security_level of
+		agent -> Filtered;
+		Level when Level =:= admin; Level =:= supervisor ->
+			[Admin | Filtered]
+	end,
+	Tabs = [{struct, [{<<"label">>, Label}, {<<"href">>, Href}]} ||
+		{Label, Href} <- TabsList],
+	Res = {struct, [{tabs, Tabs}]},
+	{ok, Res, State};
 handle_api(_, _, _) ->
 	{error, not_local}.
 

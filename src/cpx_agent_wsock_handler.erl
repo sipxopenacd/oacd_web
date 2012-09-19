@@ -87,7 +87,7 @@ websocket_handle(Data, Req, State) ->
 
 websocket_info(wsock_shutdown, Req, State) ->
 	{shutdown, Req, State};
-websocket_info({agent, M}, Req, State) ->
+websocket_info(M, Req, State) ->
 	{E, Out, C} = cpx_agent_connection:encode_cast(State#state.conn, M),
 	maybe_exit(E),
 	?DEBUG("Agent Event: ~p~n Output: ~p", [M, Out]),
@@ -99,9 +99,7 @@ websocket_info({agent, M}, Req, State) ->
 		_ ->
 			RespBin = mochijson2:encode(Out),
 			{reply, {text, RespBin}, Req, State1}
-	end;
-websocket_info(_Info, Req, State) ->
-	{ok, Req, State}.
+	end.
 
 websocket_terminate(_Reason, _Req, _State) ->
     ok.
@@ -350,7 +348,7 @@ agent_event_test_() ->
 		),
 
 		?assert(meck:called(cpx_agent_connection, encode_cast, [conn,
-			some_event]))
+			{agent, some_event}]))
 	end},
 	{"ok/error event no resp", fun() ->
 		meck:expect(cpx_agent_connection, encode_cast, 2,
@@ -362,7 +360,7 @@ agent_event_test_() ->
 		),
 
 		?assert(meck:called(cpx_agent_connection, encode_cast, [conn,
-			some_event]))
+			{agent, some_event}]))
 	end},
 	{"exit event", fun() ->
 		meck:expect(cpx_agent_connection, encode_cast, 2,
@@ -374,7 +372,7 @@ agent_event_test_() ->
 		),
 
 		?assert(meck:called(cpx_agent_connection, encode_cast, [conn,
-			some_event])),
+			{agent, some_event}])),
 		Shutdown = receive wsock_shutdown -> true after 10 -> false end,
 		?assert(Shutdown)
 	end}

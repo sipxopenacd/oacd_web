@@ -35,7 +35,7 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--include_lib("OpenACD/include/log.hrl").
+-include_lib("oacd_core/include/log.hrl").
 -define(PORT, 5555).
 
 %% api

@@ -33,7 +33,7 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--include_lib("OpenACD/include/log.hrl").
+-include_lib("oacd_core/include/log.hrl").
 
 -export([init/3, handle/2, terminate/2]).
 

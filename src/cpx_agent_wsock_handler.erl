@@ -33,8 +33,8 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--include_lib("OpenACD/include/log.hrl").
--include_lib("OpenACD/include/agent.hrl").
+-include_lib("oacd_core/include/log.hrl").
+-include_lib("oacd_core/include/agent.hrl").
 
 -export([init/3]).
 -export([websocket_init/3, websocket_handle/3,

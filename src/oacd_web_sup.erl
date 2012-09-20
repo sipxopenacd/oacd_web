@@ -24,6 +24,12 @@ start_link() ->
 %% ===================================================================
 
 init([]) ->
-	{ok, { {one_for_one, 5, 10}, [
-		?CHILD(cpx_agent_web_listener, worker)]} }.
+	CpxManagedEnv = application:get_env(cpx_managed),
+	Children = case CpxManagedEnv of
+		{ok, true} ->
+			[];
+		_ ->
+			[?CHILD(cpx_agent_web_listener, worker)]
+	end,
+	{ok, { {one_for_one, 5, 10}, Children} }.
 

@@ -1,0 +1,68 @@
+<div id="agent_web_listener" class="wide">
+<form dojoType="dijit.form.Form" id="oacdWebForm">
+<p>
+	<label>&nbsp;</label>
+	<input dojoType="dijit.form.CheckBox" name="useHttp" value="enabled" id="oacdWebEnabled">
+		<script type="dojo/method" event="onClick">
+			if(this.get('checked')){
+				dijit.byId('oacdWebPort').set('enabled', true);
+			} else {
+				dijit.byId('oacdWebPort').set('enabled', false);
+			}
+		</script>
+	</input>
+	<span class="translate">HTTP</span>
+</p>
+<p>
+	<label>Port</label>
+	<input dojoType="dijit.form.ValidationTextBox" name="port" id="oacdWebPort" regExp="[\d]+" />
+</p>
+
+<p>
+	<label>&nbsp;</label>
+	<button dojoType="dijit.form.Button" name="submit" label="Save">
+		<script type="dojo/connect" event="onClick">
+			var postUrl = '/modules/' + modules.activeNode + '/oacd_web/update';
+			var contentObj = {
+				enabled: dijit.byId('oacdWebEnabled').get('checked'),
+				port: dijit.byId('oacdWebPort').get('value')
+			};
+
+			dojo.xhrPost({
+				url: postUrl,
+				content: contentObj,
+				handleAs:'json',
+				load:function(res){
+					if(res.success == true){
+						return;
+					}
+					errMessage('Modifying oacd_web failed:  ' + res.message);
+				},
+				error:function(res){
+					errMessage('Modifying oacd_web error:  ' + res);
+				}
+			});
+		</script>
+	</button>
+</p>
+</form>
+<script type="text/javascript">
+	dojo.xhrGet({
+		url:'/modules/' + modules.activeNode + '/oacd_web/get',
+		handleAs:'json',
+		load:function(res){
+			if(res.success == false){
+				errMessage('getting settings failed:  ' + res.message);
+				return;
+			}
+			if(res.enabled == true){
+				dijit.byId('oacdWebEnabled').set('checked', true);
+				dijit.byId('oacdWebPort').set('value', res.port);
+			}
+		},
+		error:function(res){
+			errMessage('getting settings errored:  ' + res);
+		}
+	});
+</script>
+</div>

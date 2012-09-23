@@ -99,9 +99,10 @@ stop() ->
 %%====================================================================
 
 init(Options) ->
+	process_flag(trap_exit,true),
 	Port = proplists:get_value(port, Options, ?PORT),
 
-	Pid = cowboy:start_listener(cpx_agent_web, 100,
+	{ok, Pid} = cowboy:start_listener(oacd_web_http, 100,
 		cowboy_tcp_transport, [{port, Port}],
 		cowboy_http_protocol, [{dispatch, ?DISPATCH}]),
 
@@ -118,8 +119,9 @@ handle_cast(_Msg, State) ->
 handle_info(_Info, State) ->
 	{noreply, State}.
 
-terminate(_Reason, #state{http_pid=Pid}) ->
-	cowboy:stop_listener(Pid),
+terminate(Reason, #state{}) ->
+	?NOTICE("stopping web listener: ~p", [Reason]),
+	cowboy:stop_listener(oacd_web_http),
 	ok.
 
 code_change(_OldVsn, State, _Extra) ->
@@ -128,43 +130,51 @@ code_change(_OldVsn, State, _Extra) ->
 -ifdef(TEST).
 
 start_test_() ->
-	CBPid = util:zombie(),
+	CBPid = spawn(fun() -> ok end),
 
 	{setup,
 	fun() ->
 		meck:new(cowboy),
 		meck:expect(cowboy, start_listener,
-			fun(_, _, _, _, _, _) -> CBPid end),
+			fun(_, _, _, _, _, _) -> {ok, CBPid} end),
 		meck:expect(cowboy, stop_listener, 1, ok)
 	end,
 	fun(_) ->
 		meck:unload(cowboy)
 	end,
+	{foreach, fun() -> ok end, fun(_) -> catch cpx_agent_web_listener:stop() end,
 	[{"start/stop", fun() ->
 		{ok, Pid} = cpx_agent_web_listener:start(),
 		cpx_agent_web_listener:stop(),
 
-		?assertEqual(undefined, erlang:whereis(cpx_agent_web_listener)),
-		?assert(meck:called(cowboy, stop_listener, [CBPid], Pid))
+		?assert(not is_name_alive(cpx_agent_web_listener)),
+		?assert(meck:called(cowboy, stop_listener, [oacd_web_http], Pid))
+	end},
+	{"abnormal stop", fun() ->
+		{ok, Pid} = cpx_agent_web_listener:start(),
+		?assertEqual({trap_exit, true} , erlang:process_info(Pid, trap_exit)),
+		terminate(shutdown, #state{}),
+		?assert(meck:called(cowboy, stop_listener, [oacd_web_http], self()))
 	end},
 	{"start with no opts", fun() ->
 		{ok, Pid} = cpx_agent_web_listener:start(),
-		cpx_agent_web_listener:stop(),
 
 		?assert(meck:called(cowboy, start_listener,
-			[cpx_agent_web, 100,
+			[oacd_web_http, 100,
 			cowboy_tcp_transport, [{port, ?PORT}],
 			cowboy_http_protocol, [{dispatch, ?DISPATCH}]], Pid))
 	end},
 	{"start with port", fun() ->
 		{ok, Pid} = cpx_agent_web_listener:start(9123),
-		cpx_agent_web_listener:stop(),
-
 		?assert(meck:called(cowboy, start_listener,
-			[cpx_agent_web, 100,
+			[oacd_web_http, 100,
 			cowboy_tcp_transport, [{port, 9123}],
 			cowboy_http_protocol, [{dispatch, ?DISPATCH}]], Pid))
 	end}
-	]}.
+	]}}.
+
+is_name_alive(Name) ->
+	Pid = erlang:whereis(Name),
+	Pid =/= undefined andalso erlang:is_process_alive(Pid).
 
 -endif.

@@ -27,6 +27,7 @@ init([]) ->
 	CpxManagedEnv = application:get_env(cpx_managed),
 	Children = case CpxManagedEnv of
 		{ok, true} ->
+			catch cpx_web_manage_hook:register_hooks(),
 			[];
 		_ ->
 			[?CHILD(cpx_agent_web_listener, worker)]

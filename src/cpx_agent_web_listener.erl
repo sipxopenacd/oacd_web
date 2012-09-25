@@ -35,8 +35,8 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
+-include("oacd_web.hrl").
 -include_lib("oacd_core/include/log.hrl").
--define(PORT, 5555).
 
 %% api
 -export([start/0, start/1, start_link/0, start_link/1, stop/0]).
@@ -65,10 +65,10 @@
 		[]}]}]
 ).
 
-%% @doc Starts the web listener on the default port of 5050.
+%% @doc Starts the web listener on the default port of 5055.
 -spec(start/0 :: () -> {'ok', pid()}).
 start() ->
-	start(?PORT).
+	start([]).
 
 %% @doc Starts the web listener on the passed port.
 -spec(start/1 :: (Port :: non_neg_integer()) -> {'ok', pid()}).
@@ -77,10 +77,10 @@ start(Port) when is_integer(Port) ->
 start(Options) ->
 	gen_server:start({local, ?MODULE}, ?MODULE, Options, []).
 
-%% @doc Start linked on the default port of 5050.
+%% @doc Start linked on the default port of 5055.
 -spec(start_link/0 :: () -> {'ok', pid()}).
 start_link() ->
-	start_link(?PORT).
+	start_link([]).
 
 %% @doc Start linked on the given port.
 -spec(start_link/1 :: (Port :: non_neg_integer()) -> {'ok', pid()}).
@@ -100,7 +100,7 @@ stop() ->
 
 init(Options) ->
 	process_flag(trap_exit,true),
-	Port = proplists:get_value(port, Options, ?PORT),
+	Port = proplists:get_value(port, Options, ?DEFAULT_PORT),
 
 	{ok, Pid} = cowboy:start_listener(oacd_web_http, 100,
 		cowboy_tcp_transport, [{port, Port}],
@@ -161,7 +161,7 @@ start_test_() ->
 
 		?assert(meck:called(cowboy, start_listener,
 			[oacd_web_http, 100,
-			cowboy_tcp_transport, [{port, ?PORT}],
+			cowboy_tcp_transport, [{port, ?DEFAULT_PORT}],
 			cowboy_http_protocol, [{dispatch, ?DISPATCH}]], Pid))
 	end},
 	{"start with port", fun() ->

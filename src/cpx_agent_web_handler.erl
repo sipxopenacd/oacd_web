@@ -83,6 +83,8 @@ terminate(_Req, _State) ->
 
 -ifdef(TEST).
 
+zombie() -> spawn(fun() -> receive headshot -> exit(headshot) end end).
+
 init_test() ->
 	?assertEqual(
 		{ok, req, none},
@@ -90,7 +92,7 @@ init_test() ->
 
 handle_test_() ->
 	ReqBinStr = <<"{\"function\":\"check_cookie\"}">>,
-	NewPid = util:zombie(),
+	NewPid = zombie(),
 	{setup, fun() ->
 		meck:new(cowboy_http_req),
 		meck:expect(cowboy_http_req, method, 1, {'POST', req}),
@@ -144,7 +146,7 @@ handle_test_() ->
 			[200, [], <<"{}">>, req]))
 	end},
 	{"valid cookie", fun() ->
-		Pid = util:zombie(),
+		Pid = zombie(),
 
 		meck:expect(cowboy_http_req, cookie, 2, {<<"alive">>, req}),
 		meck:expect(cpx_agent_web_listener, get_connection, 1, Pid),

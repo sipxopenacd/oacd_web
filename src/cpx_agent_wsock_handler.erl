@@ -1,30 +1,15 @@
-%%	The contents of this file are subject to the Common Public Attribution
-%%	License Version 1.0 (the “License”); you may not use this file except
-%%	in compliance with the License. You may obtain a copy of the License at
-%%	http://opensource.org/licenses/cpal_1.0. The License is based on the
-%%	Mozilla Public License Version 1.1 but Sections 14 and 15 have been
-%%	added to cover use of software over a computer network and provide for
-%%	limited attribution for the Original Developer. In addition, Exhibit A
-%%	has been modified to be consistent with Exhibit B.
+%% Copyright (c) 2012 eZuce, Inc. All rights reserved.
+%% Contributed to SIPfoundry under a Contributor Agreement
 %%
-%%	Software distributed under the License is distributed on an “AS IS”
-%%	basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See the
-%%	License for the specific language governing rights and limitations
-%%	under the License.
+%% This software is free software; you can redistribute it and/or modify it under
+%% the terms of the Affero General Public License (AGPL) as published by the
+%% Free Software Foundation; either version 3 of the License, or (at your option)
+%% any later version.
 %%
-%%	The Original Code is OpenACD.
-%%
-%%	The Initial Developers of the Original Code is
-%%	Andrew Thompson and Micah Warren.
-%%
-%%	All portions of the code written by the Initial Developers are Copyright
-%%	(c) 2008-2009 SpiceCSM.
-%%	All Rights Reserved.
-%%
-%%	Contributor(s):
-%%
-%%	Jan Vincent Liwanag / eZuce <jvliwanag at ezuce dot com>
-%%
+%% This software is distributed in the hope that it will be useful, but WITHOUT
+%% ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+%% FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+%% details.
 
 -module(cpx_agent_wsock_handler).
 -author("jvliwanag").

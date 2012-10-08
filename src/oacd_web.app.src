@@ -1,5 +1,4 @@
 {application, oacd_web, [
-
 {description, "OpenACD Web Plug-in"},
 {vsn, "0.0.1"},
 {registered, []},

@@ -31,7 +31,17 @@ init({tcp, http}, _Req, _Opts) ->
 	{upgrade, protocol, cowboy_http_websocket}.
 
 websocket_init(_TransportName, Req, _Opts) ->
-	{ok, Req, #state{}}.
+	case cpx_hooks:trigger_hooks(wsock_auth, [Req]) of
+		{ok, {Login, Req2}} ->
+			case cpx_agent_connection:start(Login) of
+				{ok, _Agent, Conn} ->
+					{ok, Req2, #state{conn=Conn}};
+				{error, Err} ->
+					{ok, Req2, #state{}}
+			end;
+		_ ->
+			{ok, Req, #state{}}
+	end.
 
 websocket_handle({text, Msg}, Req, State) ->
 	?DEBUG("Received on ws: ~p", [Msg]),
@@ -124,7 +134,7 @@ handle_api(login, [UsernameBin, EncryptedPwdBin], #state{conn = undefined} = Sta
 						{error, deny} ->
 							InvalidCredsError;
 						{error, duplicate} ->
-							{error, <<"DUPLICATE_CONNECTION">>,
+							{exit, <<"DUPLICATE_CONNECTION">>,
 								<<"agent already logged in">>, State}
 					end;
 				_ ->
@@ -173,10 +183,36 @@ init_test() ->
 		cpx_agent_wsock_handler:init({tcp, http}, req, [])).
 
 
-websocket_init_test() ->
-	?assertEqual(
-		{ok, req, #state{}},
-		cpx_agent_wsock_handler:websocket_init(tcp, req, [])).
+websocket_init_test_() ->
+	{setup, fun() ->
+		meck:new(cpx_hooks),
+		meck:new(cpx_agent_connection)
+	end, fun(_) ->
+		meck:unload(cpx_agent_connection),
+		meck:unload(cpx_hooks)
+	end, [fun() ->
+		meck:expect(cpx_hooks, trigger_hooks, fun(wsock_auth, [req]) ->
+			{error, unhandled} end),
+
+		?assertEqual({ok, req, #state{conn=undefined}},
+			cpx_agent_wsock_handler:websocket_init(tcp, req, []))
+	end, fun() ->
+		meck:expect(cpx_hooks, trigger_hooks, fun(wsock_auth, [req]) ->
+			{ok, {"agent", req}} end),
+		meck:expect(cpx_agent_connection, start, fun("agent") ->
+			{error, noagent} end),
+
+		?assertEqual({ok, req, #state{}},
+			cpx_agent_wsock_handler:websocket_init(tcp, req, []))
+	end, fun() ->
+		meck:expect(cpx_hooks, trigger_hooks, fun(wsock_auth, [req]) ->
+			{ok, {"agent", req}} end),
+		meck:expect(cpx_agent_connection, start, fun("agent") ->
+			{ok, agent, conn} end),
+
+		?assertEqual({ok, req, #state{conn=conn}},
+			cpx_agent_wsock_handler:websocket_init(tcp, req, []))
+	end]}.
 
 t_handle(ReqId, Fun, Args, State) ->
 	Bin = iolist_to_binary(mochijson2:encode({struct, [
@@ -295,7 +331,7 @@ websocket_login_test_() ->
 		meck:expect(util, decrypt_password, 1, {ok, "nonceypassword"}),
 		meck:expect(cpx_agent_connection, login, 2, {error, duplicate}),
 
-		t_assert_fail(1, login, [<<"username">>, <<"cantdecrypt">>],
+		t_assert_fail_shutdown(1, login, [<<"username">>, <<"cantdecrypt">>],
 			#state{nonce= <<"noncey">>}, <<"DUPLICATE_CONNECTION">>,
 			<<"agent already logged in">>)
 	end}

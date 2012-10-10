@@ -35,11 +35,14 @@ websocket_init(_TransportName, Req, _Opts) ->
 		{ok, {Login, Req2}} ->
 			case cpx_agent_connection:start(Login) of
 				{ok, _Agent, Conn} ->
+					send(init_response(Login)),
 					{ok, Req2, #state{conn=Conn}};
-				{error, Err} ->
+				{error, _Err} ->
+					send(init_response(null)),
 					{ok, Req2, #state{}}
 			end;
 		_ ->
+			send(init_response(null)),
 			{ok, Req, #state{}}
 	end.
 
@@ -82,6 +85,8 @@ websocket_handle(Data, Req, State) ->
 
 websocket_info(wsock_shutdown, Req, State) ->
 	{shutdown, Req, State};
+websocket_info({send, Bin}, Req, State) ->
+	{reply, {text, Bin}, Req, State};
 websocket_info(M, Req, State) ->
 	{E, Out, C} = cpx_agent_connection:encode_cast(State#state.conn, M),
 	maybe_exit(E),
@@ -174,6 +179,23 @@ maybe_exit(exit) ->
 	self() ! wsock_shutdown;
 maybe_exit(_) ->
 	ok.
+
+send(Bin) ->
+	self() ! {send, Bin}.
+
+init_response(Username) ->
+	StructUsername = case Username of
+		U when is_list(U) ->
+			list_to_binary(U);
+		_ ->
+			null
+	end,
+	Resp = {struct, [
+		{username, StructUsername},
+		{node, atom_to_binary(node(), utf8)},
+		{server_time, util:now()}
+	]},
+	mochijson2:encode(Resp).
 
 -ifdef(TEST).
 

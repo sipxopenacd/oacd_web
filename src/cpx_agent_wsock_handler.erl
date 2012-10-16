@@ -50,7 +50,8 @@ websocket_init(_TransportName, Req, Opts) ->
 
 websocket_handle({text, Msg}, Req, State) ->
 	?DEBUG("Received on ws: ~p", [Msg]),
-	{E, Out, C} = cpx_agent_connection:handle_json(State#state.conn, Msg),
+	Mods = State#state.rpc_mods,
+	{E, Out, C} = cpx_agent_connection:handle_json(State#state.conn, Msg, Mods),
 	maybe_exit(E),
 	State1 = State#state{conn=C},
 	case Out of
@@ -379,7 +380,8 @@ websocket_init_test_() ->
 
 websocket_api_test_() ->
 	Conn = conn,
-	St = #state{conn = Conn},
+	Mods = [mod1, mod2],
+	St = #state{conn = Conn, rpc_mods=Mods},
 
 	{setup, fun() ->
 		meck:new(cpx_agent_connection)
@@ -390,32 +392,32 @@ websocket_api_test_() ->
 	[{"ok with resp api", fun() ->
 		Req = <<"{\"id\":1,\"method\":\"do_something\"}">>,
 		Res = <<"{\"id\":1,\"result\":5}">>,
-		meck:expect(cpx_agent_connection, handle_json, 2,
+		meck:expect(cpx_agent_connection, handle_json, 3,
 			{ok, Res, conn2}),
 
 		?assertEqual({reply, {text, Res}, req, St#state{conn=conn2}},
 			websocket_handle({text, Req}, req, St)),
-		?assert(meck:called(cpx_agent_connection, handle_json, [conn, Req], self()))
+		?assert(meck:called(cpx_agent_connection, handle_json, [conn, Req, Mods], self()))
 	end},
 	{"ok no resp api", fun() ->
 		Req = <<"{\"method\":\"do_something\"}">>,
 		Res = undefined,
-		meck:expect(cpx_agent_connection, handle_json, 2,
+		meck:expect(cpx_agent_connection, handle_json, 3,
 			{ok, Res, conn2}),
 
 		?assertEqual({ok, req, St#state{conn=conn2}},
 			websocket_handle({text, Req}, req, St)),
-		?assert(meck:called(cpx_agent_connection, handle_json, [conn, Req], self()))
+		?assert(meck:called(cpx_agent_connection, handle_json, [conn, Req, Mods], self()))
 	end},
 	{"exit api", fun() ->
 		Req = <<"{\"id\":1,\"method\":\"do_something\"}">>,
 		Res = <<"{\"id\":1,\"result\":5}">>,
-		meck:expect(cpx_agent_connection, handle_json, 2,
+		meck:expect(cpx_agent_connection, handle_json, 3,
 			{exit, Res, conn2}),
 
 		?assertEqual({reply, {text, Res}, req, St#state{conn=conn2}},
 			websocket_handle({text, Req}, req, St)),
-		?assert(meck:called(cpx_agent_connection, handle_json, [conn, Req], self())),
+		?assert(meck:called(cpx_agent_connection, handle_json, [conn, Req, Mods], self())),
 		Shutdown = receive wsock_shutdown -> true after 10 -> false end,
 		?assert(Shutdown)
 	end}]}.

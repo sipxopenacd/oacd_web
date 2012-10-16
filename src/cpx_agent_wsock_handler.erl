@@ -25,59 +25,71 @@
 -export([websocket_init/3, websocket_handle/3,
 	websocket_info/3, websocket_terminate/3]).
 
--record(state, {nonce, conn}).
+-record(state, {nonce, conn, rpc_mods=[]}).
 
 init({tcp, http}, _Req, _Opts) ->
 	{upgrade, protocol, cowboy_http_websocket}.
 
-websocket_init(_TransportName, Req, _Opts) ->
+websocket_init(_TransportName, Req, Opts) ->
+	RpcMods = proplists:get_value(rpc_mods, Opts, []),
+	St = #state{rpc_mods=RpcMods},
 	case cpx_hooks:trigger_hooks(wsock_auth, [Req]) of
 		{ok, {Login, Req2}} ->
 			case cpx_agent_connection:start(Login) of
 				{ok, _Agent, Conn} ->
 					send(init_response(Login)),
-					{ok, Req2, #state{conn=Conn}};
+					{ok, Req2, St#state{conn=Conn}};
 				{error, _Err} ->
 					send(init_response(null)),
-					{ok, Req2, #state{}}
+					{ok, Req2, St}
 			end;
 		_ ->
 			send(init_response(null)),
-			{ok, Req, #state{}}
+			{ok, Req, St}
 	end.
 
 websocket_handle({text, Msg}, Req, State) ->
 	?DEBUG("Received on ws: ~p", [Msg]),
-	J = {struct, P} = mochijson2:decode(Msg),
-	GetVal = fun(N) -> proplists:get_value(N, P) end,
-	F = (catch binary_to_existing_atom(GetVal(<<"function">>), utf8)),
-	Args = GetVal(<<"args">>),
-	ReqId = GetVal(<<"request_id">>),
-	ApiRes = handle_api(F, Args, State),
-	{RespBin, State1} = case ApiRes of
-		{error, not_local} ->
-			{E, Out, C} = cpx_agent_connection:handle_json(State#state.conn, J),
-			maybe_exit(E),
-			{Out, State#state{conn = C}};
+	{E, Out, C} = cpx_agent_connection:handle_json(State#state.conn, Msg),
+	maybe_exit(E),
+	State1 = State#state{conn=C},
+	case Out of
+		undefined ->
+			{ok, Req, State1};
 		_ ->
-			{RespProps, State2} = case ApiRes of
-				{ok, St} ->
-					{[{request_id, ReqId},
-						{success, true}], St};
-				{ok, Result, St} ->
-					{[{request_id, ReqId},
-						{success, true},
-						{result, Result}], St};
-				{E, ErrCode, ErrMessage, St} ->
-					maybe_exit(E),
-					{[{request_id, ReqId},
-						{success, false},
-						{errcode, ErrCode},
-						{message, ErrMessage}], St}
-			end,
-			{mochijson2:encode({struct, RespProps}), State2}
-	end,
-	{reply, {text, RespBin}, Req, State1};
+			{reply, {text, Out}, Req, State1}
+	end;
+
+	% J = {struct, P} = mochijson2:decode(Msg),
+	% GetVal = fun(N) -> proplists:get_value(N, P) end,
+	% F = (catch binary_to_existing_atom(GetVal(<<"function">>), utf8)),
+	% Args = GetVal(<<"args">>),
+	% ReqId = GetVal(<<"request_id">>),
+	% ApiRes = handle_api(F, Args, State),
+	% {RespBin, State1} = case ApiRes of
+	% 	{error, not_local} ->
+	% 		{E, Out, C} = cpx_agent_connection:handle_json(State#state.conn, Msg),
+	% 		maybe_exit(E),
+	% 		{Out, State#state{conn = C}};
+	% 	_ ->
+	% 		{RespProps, State2} = case ApiRes of
+	% 			{ok, St} ->
+	% 				{[{request_id, ReqId},
+	% 					{success, true}], St};
+	% 			{ok, Result, St} ->
+	% 				{[{request_id, ReqId},
+	% 					{success, true},
+	% 					{result, Result}], St};
+	% 			{E, ErrCode, ErrMessage, St} ->
+	% 				maybe_exit(E),
+	% 				{[{request_id, ReqId},
+	% 					{success, false},
+	% 					{errcode, ErrCode},
+	% 					{message, ErrMessage}], St}
+	% 		end,
+	% 		{mochijson2:encode({struct, RespProps}), State2}
+	% end,
+	% {reply, {text, RespBin}, Req, State1};
 
 websocket_handle(Data, Req, State) ->
 	?DEBUG("Received non-text on ws: ~p", [Data]),
@@ -106,71 +118,71 @@ websocket_terminate(_Reason, _Req, _State) ->
 
 %% Internal
 
-handle_api(get_nonce, [], State) ->
-	[E, N] = util:get_pubkey(),
-	Salt = util:generate_salt(),
-	Result = {struct, [{nonce, Salt}, {pubkey_e, list_to_binary(integer_to_list(E, 16))},
-		{pubkey_n, list_to_binary(integer_to_list(N, 16))}]},
-	{ok, Result, State#state{nonce=Salt}};
+% handle_api(get_nonce, [], State) ->
+% 	[E, N] = util:get_pubkey(),
+% 	Salt = util:generate_salt(),
+% 	Result = {struct, [{nonce, Salt}, {pubkey_e, list_to_binary(integer_to_list(E, 16))},
+% 		{pubkey_n, list_to_binary(integer_to_list(N, 16))}]},
+% 	{ok, Result, State#state{nonce=Salt}};
 
-handle_api(login, [_, _], #state{nonce = undefined, conn = undefined} = State) ->
-	{error, <<"MISSING_NONCE">>, <<"get nonce comes first">>, State};
-handle_api(login, [UsernameBin, EncryptedPwdBin], #state{conn = undefined} = State) ->
-	EncryptedPwd = binary_to_list(EncryptedPwdBin),
+% handle_api(login, [_, _], #state{nonce = undefined, conn = undefined} = State) ->
+% 	{error, <<"MISSING_NONCE">>, <<"get nonce comes first">>, State};
+% handle_api(login, [UsernameBin, EncryptedPwdBin], #state{conn = undefined} = State) ->
+% 	EncryptedPwd = binary_to_list(EncryptedPwdBin),
 
-	InvalidCredsError = {exit, <<"INVALID_CREDENTIALS">>,
-		<<"username or password invalid">>, State},
+% 	InvalidCredsError = {exit, <<"INVALID_CREDENTIALS">>,
+% 		<<"username or password invalid">>, State},
 
-	case catch util:decrypt_password(EncryptedPwd) of
-		{ok, Decrypted} ->
-			Username = binary_to_list(UsernameBin),
-			Nonce = binary_to_list(State#state.nonce),
-			case catch lists:split(length(Nonce), Decrypted) of
-				{Nonce, Password} ->
-					case cpx_agent_connection:login(Username, Password) of
-						{ok, Agent, Conn} ->
-							State1 = State#state{conn = Conn},
-							Res = {struct, [
-								{profile, list_to_binary(Agent#agent.profile)},
-								{security_level, Agent#agent.security_level},
-								{timestamp, util:now()}]
-							},
-							{ok, Res, State1};
-						{error, deny} ->
-							InvalidCredsError;
-						{error, duplicate} ->
-							{exit, <<"DUPLICATE_CONNECTION">>,
-								<<"agent already logged in">>, State}
-					end;
-				_ ->
-					InvalidCredsError
-			end;
-		_ ->
-			InvalidCredsError
-	end;
-handle_api(login, [_, _], State) ->
-	{exit, <<"DUP_LOGIN">>, <<"already logged in">>, State};
+% 	case catch util:decrypt_password(EncryptedPwd) of
+% 		{ok, Decrypted} ->
+% 			Username = binary_to_list(UsernameBin),
+% 			Nonce = binary_to_list(State#state.nonce),
+% 			case catch lists:split(length(Nonce), Decrypted) of
+% 				{Nonce, Password} ->
+% 					case cpx_agent_connection:login(Username, Password) of
+% 						{ok, Agent, Conn} ->
+% 							State1 = State#state{conn = Conn},
+% 							Res = {struct, [
+% 								{profile, list_to_binary(Agent#agent.profile)},
+% 								{security_level, Agent#agent.security_level},
+% 								{timestamp, util:now()}]
+% 							},
+% 							{ok, Res, State1};
+% 						{error, deny} ->
+% 							InvalidCredsError;
+% 						{error, duplicate} ->
+% 							{exit, <<"DUPLICATE_CONNECTION">>,
+% 								<<"agent already logged in">>, State}
+% 					end;
+% 				_ ->
+% 					InvalidCredsError
+% 			end;
+% 		_ ->
+% 			InvalidCredsError
+% 	end;
+% handle_api(login, [_, _], State) ->
+% 	{exit, <<"DUP_LOGIN">>, <<"already logged in">>, State};
 
-%% TODO add test, avoid dump_state
-handle_api(get_tabs, [], State) ->
-	#agent{source = APid} = cpx_agent_connection:get_agent(State#state.conn),
-	Agent = agent:dump_state(APid),
+% %% TODO add test, avoid dump_state
+% handle_api(get_tabs, [], State) ->
+% 	#agent{source = APid} = cpx_agent_connection:get_agent(State#state.conn),
+% 	Agent = agent:dump_state(APid),
 
-	Admin = {<<"Dashboard">>, <<"static/agent/tabs/dashboard.html">>},
-	Endpoints = {<<"Endpoints">>, <<"static/agent/tabs/endpoints.html">>},
-	{ok, HookRes} = cpx_hooks:trigger_hooks(agent_web_tabs, [Agent], all),
-	Filtered = [Endpoints | [X || {B1, B2} = X <- HookRes, is_binary(B1), is_binary(B2)]],
-	TabsList = case Agent#agent.security_level of
-		agent -> Filtered;
-		Level when Level =:= admin; Level =:= supervisor ->
-			[Admin | Filtered]
-	end,
-	Tabs = [{struct, [{<<"label">>, Label}, {<<"href">>, Href}]} ||
-		{Label, Href} <- TabsList],
-	Res = {struct, [{tabs, Tabs}]},
-	{ok, Res, State};
-handle_api(_, _, _) ->
-	{error, not_local}.
+% 	Admin = {<<"Dashboard">>, <<"static/agent/tabs/dashboard.html">>},
+% 	Endpoints = {<<"Endpoints">>, <<"static/agent/tabs/endpoints.html">>},
+% 	{ok, HookRes} = cpx_hooks:trigger_hooks(agent_web_tabs, [Agent], all),
+% 	Filtered = [Endpoints | [X || {B1, B2} = X <- HookRes, is_binary(B1), is_binary(B2)]],
+% 	TabsList = case Agent#agent.security_level of
+% 		agent -> Filtered;
+% 		Level when Level =:= admin; Level =:= supervisor ->
+% 			[Admin | Filtered]
+% 	end,
+% 	Tabs = [{struct, [{<<"label">>, Label}, {<<"href">>, Href}]} ||
+% 		{Label, Href} <- TabsList],
+% 	Res = {struct, [{tabs, Tabs}]},
+% 	{ok, Res, State};
+% handle_api(_, _, _) ->
+% 	{error, not_local}.
 
 %% Internal
 
@@ -234,130 +246,136 @@ websocket_init_test_() ->
 
 		?assertEqual({ok, req, #state{conn=conn}},
 			cpx_agent_wsock_handler:websocket_init(tcp, req, []))
-	end]}.
+	end, {"additional RPC handlers", fun() ->
+		meck:expect(cpx_hooks, trigger_hooks, fun(wsock_auth, [req]) ->
+			{error, unhandled} end),
 
-t_handle(ReqId, Fun, Args, State) ->
-	Bin = iolist_to_binary(mochijson2:encode({struct, [
-		{request_id, ReqId},
-		{function, Fun},
-		{args, Args}]})),
-	cpx_agent_wsock_handler:websocket_handle({text, Bin}, req, State).
+		?assertEqual({ok, req, #state{conn=undefined, rpc_mods=[rpc1, rpc2]}},
+			cpx_agent_wsock_handler:websocket_init(tcp, req, [{rpc_mods, [rpc1, rpc2]}]))
+	end}]}.
 
-t_assert_success(ReqId, Fun, Args, State, NState) ->
-	t_assert_success(ReqId, Fun, Args, State, undefined, NState).
+% t_handle(ReqId, Fun, Args, State) ->
+% 	Bin = iolist_to_binary(mochijson2:encode({struct, [
+% 		{request_id, ReqId},
+% 		{function, Fun},
+% 		{args, Args}]})),
+% 	cpx_agent_wsock_handler:websocket_handle({text, Bin}, req, State).
 
-t_assert_success(ReqId, Fun, Args, State, Result, NState) ->
-	{reply, {text, Txt}, _Req, St} = t_handle(ReqId, Fun, Args, State),
+% t_assert_success(ReqId, Fun, Args, State, NState) ->
+% 	t_assert_success(ReqId, Fun, Args, State, undefined, NState).
 
-	?assertEqual(NState, St),
-	{struct, Props} = mochijson2:decode(Txt),
-	GetVal = fun(N) -> proplists:get_value(N, Props) end,
-	?assertEqual(ReqId, GetVal(<<"request_id">>)),
-	?assertEqual(true, GetVal(<<"success">>)),
+% t_assert_success(ReqId, Fun, Args, State, Result, NState) ->
+% 	{reply, {text, Txt}, _Req, St} = t_handle(ReqId, Fun, Args, State),
 
-	case Result of
-		undefined ->
-			ok;
-		_ ->
-			%% allows you to use atoms as key names
-			{struct, ResultProps} = mochijson2:decode(mochijson2:encode(Result)),
-			{struct, RProps} = GetVal(<<"result">>),
+% 	?assertEqual(NState, St),
+% 	{struct, Props} = mochijson2:decode(Txt),
+% 	GetVal = fun(N) -> proplists:get_value(N, Props) end,
+% 	?assertEqual(ReqId, GetVal(<<"request_id">>)),
+% 	?assertEqual(true, GetVal(<<"success">>)),
 
-			%% Should be recursive, but good enough for now
-			?assertEqual(lists:sort(ResultProps), lists:sort(RProps))
-	end.
+% 	case Result of
+% 		undefined ->
+% 			ok;
+% 		_ ->
+% 			%% allows you to use atoms as key names
+% 			{struct, ResultProps} = mochijson2:decode(mochijson2:encode(Result)),
+% 			{struct, RProps} = GetVal(<<"result">>),
 
-t_assert_fail(ReqId, Fun, Args, State, ErrCode, Message) ->
-	{reply, {text, Txt}, _Req, _State} = t_handle(ReqId, Fun, Args, State),
-	{struct, Props} = mochijson2:decode(Txt),
-	GetVal = fun(N) -> proplists:get_value(N, Props) end,
-	?assertEqual(ReqId, GetVal(<<"request_id">>)),
-	?assertEqual(false, GetVal(<<"success">>)),
-	?assertEqual(ErrCode, GetVal(<<"errcode">>)),
-	?assertEqual(Message, GetVal(<<"message">>)).
+% 			%% Should be recursive, but good enough for now
+% 			?assertEqual(lists:sort(ResultProps), lists:sort(RProps))
+% 	end.
 
-t_assert_fail_shutdown(ReqId, Fun, Args, State, ErrCode, Message) ->
-	t_assert_fail(ReqId, Fun, Args, State, ErrCode, Message),
-	Shutdown = receive wsock_shutdown -> true after 10 -> false end,
-	?assert(Shutdown).
+% t_assert_fail(ReqId, Fun, Args, State, ErrCode, Message) ->
+% 	{reply, {text, Txt}, _Req, _State} = t_handle(ReqId, Fun, Args, State),
+% 	{struct, Props} = mochijson2:decode(Txt),
+% 	GetVal = fun(N) -> proplists:get_value(N, Props) end,
+% 	?assertEqual(ReqId, GetVal(<<"request_id">>)),
+% 	?assertEqual(false, GetVal(<<"success">>)),
+% 	?assertEqual(ErrCode, GetVal(<<"errcode">>)),
+% 	?assertEqual(Message, GetVal(<<"message">>)).
+
+% t_assert_fail_shutdown(ReqId, Fun, Args, State, ErrCode, Message) ->
+% 	t_assert_fail(ReqId, Fun, Args, State, ErrCode, Message),
+% 	Shutdown = receive wsock_shutdown -> true after 10 -> false end,
+% 	?assert(Shutdown).
 
 
-websocket_login_test_() ->
-	{setup, fun() ->
-		meck:new(util),
-		meck:expect(util, get_pubkey, 0, [23, 989898]),
-		meck:expect(util, generate_salt, 0, <<"noncey">>),
-		meck:expect(util, decrypt_password, fun(<<"encryptedpassword">>) -> {ok, "nonceypassword"};
-			(_) -> {error, decrypt_failed} end),
-		meck:expect(util, now, 0, 12345),
+% websocket_login_test_() ->
+% 	{setup, fun() ->
+% 		meck:new(util),
+% 		meck:expect(util, get_pubkey, 0, [23, 989898]),
+% 		meck:expect(util, generate_salt, 0, <<"noncey">>),
+% 		meck:expect(util, decrypt_password, fun(<<"encryptedpassword">>) -> {ok, "nonceypassword"};
+% 			(_) -> {error, decrypt_failed} end),
+% 		meck:expect(util, now, 0, 12345),
 
-		meck:new(cpx_agent_connection)
-	end, fun(_) ->
-		meck:unload(cpx_agent_connection),
-		meck:unload(util)
-	end, [{"get_nonce", fun() ->
-		State = #state{nonce=undefined},
-		PubKeyEHex = <<"17">>,
-		PubKeyNHex = <<"F1ACA">>,
-		t_assert_success(1, get_nonce, [],
-			State, {struct, [{nonce, <<"noncey">>}, {pubkey_e, PubKeyEHex},
-				{pubkey_n, PubKeyNHex}]}, State#state{nonce= <<"noncey">>})
-	end},
-	{"login already logged in", fun() ->
-		t_assert_fail(1, login, [<<"username">>, <<"password">>],
-			#state{nonce= <<"noncey">>, conn= fkconn}, <<"DUP_LOGIN">>,
-			<<"already logged in">>)
-	end},
-	{"login w/o nonce", fun() ->
-		t_assert_fail_shutdown(1, login, [<<"username">>, <<"password">>],
-			#state{nonce=undefined}, <<"MISSING_NONCE">>,
-			<<"get nonce comes first">>)
-	end},
-	{"login decrypt fail", fun() ->
-		meck:expect(util, decrypt_password, 1, {error, decrypt_fail}),
+% 		meck:new(cpx_agent_connection)
+% 	end, fun(_) ->
+% 		meck:unload(cpx_agent_connection),
+% 		meck:unload(util)
+% 	end, [{"get_nonce", fun() ->
+% 		State = #state{nonce=undefined},
+% 		PubKeyEHex = <<"17">>,
+% 		PubKeyNHex = <<"F1ACA">>,
+% 		t_assert_success(1, get_nonce, [],
+% 			State, {struct, [{nonce, <<"noncey">>}, {pubkey_e, PubKeyEHex},
+% 				{pubkey_n, PubKeyNHex}]}, State#state{nonce= <<"noncey">>})
+% 	end},
+% 	{"login already logged in", fun() ->
+% 		t_assert_fail(1, login, [<<"username">>, <<"password">>],
+% 			#state{nonce= <<"noncey">>, conn= fkconn}, <<"DUP_LOGIN">>,
+% 			<<"already logged in">>)
+% 	end},
+% 	{"login w/o nonce", fun() ->
+% 		t_assert_fail_shutdown(1, login, [<<"username">>, <<"password">>],
+% 			#state{nonce=undefined}, <<"MISSING_NONCE">>,
+% 			<<"get nonce comes first">>)
+% 	end},
+% 	{"login decrypt fail", fun() ->
+% 		meck:expect(util, decrypt_password, 1, {error, decrypt_fail}),
 
-		t_assert_fail_shutdown(1, login, [<<"username">>, <<"cantdecrypt">>],
-			#state{nonce= <<"noncey">>}, <<"INVALID_CREDENTIALS">>,
-			<<"username or password invalid">>)
-	end},
-	{"login wrong salt", fun() ->
-		meck:expect(util, decrypt_password, 1, {ok, <<"wrongnoncepassword">>}),
+% 		t_assert_fail_shutdown(1, login, [<<"username">>, <<"cantdecrypt">>],
+% 			#state{nonce= <<"noncey">>}, <<"INVALID_CREDENTIALS">>,
+% 			<<"username or password invalid">>)
+% 	end},
+% 	{"login wrong salt", fun() ->
+% 		meck:expect(util, decrypt_password, 1, {ok, <<"wrongnoncepassword">>}),
 
-		t_assert_fail_shutdown(1, login, [<<"username">>, <<"cantdecrypt">>],
-			#state{nonce= <<"noncey">>}, <<"INVALID_CREDENTIALS">>,
-			<<"username or password invalid">>)
-	end},
-	{"login success", fun() ->
-		Agent = #agent{id = "agentId", login = "username", skills = [],
-						profile = "Default", security_level = agent},
+% 		t_assert_fail_shutdown(1, login, [<<"username">>, <<"cantdecrypt">>],
+% 			#state{nonce= <<"noncey">>}, <<"INVALID_CREDENTIALS">>,
+% 			<<"username or password invalid">>)
+% 	end},
+% 	{"login success", fun() ->
+% 		Agent = #agent{id = "agentId", login = "username", skills = [],
+% 						profile = "Default", security_level = agent},
 
-		meck:expect(util, decrypt_password, 1, {ok, "nonceypassword"}),
-		meck:expect(cpx_agent_connection, login, 2, {ok, Agent, conn}),
+% 		meck:expect(util, decrypt_password, 1, {ok, "nonceypassword"}),
+% 		meck:expect(cpx_agent_connection, login, 2, {ok, Agent, conn}),
 
-		St = #state{nonce= <<"noncey">>, conn = undefined},
+% 		St = #state{nonce= <<"noncey">>, conn = undefined},
 
-		t_assert_success(1, login, [<<"username">>, <<"encryptedpwd">>],
-			St, {struct, [{profile, <<"Default">>}, {security_level, agent},
-			{timestamp, 12345}]}, St#state{conn = conn}),
-		?assert(meck:called(cpx_agent_connection, login, ["username", "password"], self()))
-	end},
-	{"login deny", fun() ->
-		meck:expect(util, decrypt_password, 1, {ok, "nonceypassword"}),
-		meck:expect(cpx_agent_connection, login, 2, {error, deny}),
+% 		t_assert_success(1, login, [<<"username">>, <<"encryptedpwd">>],
+% 			St, {struct, [{profile, <<"Default">>}, {security_level, agent},
+% 			{timestamp, 12345}]}, St#state{conn = conn}),
+% 		?assert(meck:called(cpx_agent_connection, login, ["username", "password"], self()))
+% 	end},
+% 	{"login deny", fun() ->
+% 		meck:expect(util, decrypt_password, 1, {ok, "nonceypassword"}),
+% 		meck:expect(cpx_agent_connection, login, 2, {error, deny}),
 
-		t_assert_fail_shutdown(1, login, [<<"username">>, <<"cantdecrypt">>],
-			#state{nonce= <<"noncey">>}, <<"INVALID_CREDENTIALS">>,
-			<<"username or password invalid">>)
-	end},
-	{"login duplicate", fun() ->
-		meck:expect(util, decrypt_password, 1, {ok, "nonceypassword"}),
-		meck:expect(cpx_agent_connection, login, 2, {error, duplicate}),
+% 		t_assert_fail_shutdown(1, login, [<<"username">>, <<"cantdecrypt">>],
+% 			#state{nonce= <<"noncey">>}, <<"INVALID_CREDENTIALS">>,
+% 			<<"username or password invalid">>)
+% 	end},
+% 	{"login duplicate", fun() ->
+% 		meck:expect(util, decrypt_password, 1, {ok, "nonceypassword"}),
+% 		meck:expect(cpx_agent_connection, login, 2, {error, duplicate}),
 
-		t_assert_fail_shutdown(1, login, [<<"username">>, <<"cantdecrypt">>],
-			#state{nonce= <<"noncey">>}, <<"DUPLICATE_CONNECTION">>,
-			<<"agent already logged in">>)
-	end}
-	]}.
+% 		t_assert_fail_shutdown(1, login, [<<"username">>, <<"cantdecrypt">>],
+% 			#state{nonce= <<"noncey">>}, <<"DUPLICATE_CONNECTION">>,
+% 			<<"agent already logged in">>)
+% 	end}
+% 	]}.
 
 websocket_api_test_() ->
 	Conn = conn,
@@ -369,24 +387,37 @@ websocket_api_test_() ->
 	fun(_) ->
 		meck:unload(cpx_agent_connection)
 	end,
-	[{"ok/error api", fun() ->
+	[{"ok with resp api", fun() ->
+		Req = <<"{\"id\":1,\"method\":\"do_something\"}">>,
+		Res = <<"{\"id\":1,\"result\":5}">>,
 		meck:expect(cpx_agent_connection, handle_json, 2,
-			{ok, <<"{\"request_id\":1,\"success\":true}">>, conn2}),
-		t_assert_success(1, some_api_fun, [<<"somearg">>], St, St#state{conn=conn2}),
-		?assert(meck:called(cpx_agent_connection, handle_json, [conn,
-			{struct, [{<<"request_id">>, 1},
-				{<<"function">>, <<"some_api_fun">>},
-				{<<"args">>, [<<"somearg">>]}]}]))
+			{ok, Res, conn2}),
+
+		?assertEqual({reply, {text, Res}, req, St#state{conn=conn2}},
+			websocket_handle({text, Req}, req, St)),
+		?assert(meck:called(cpx_agent_connection, handle_json, [conn, Req], self()))
+	end},
+	{"ok no resp api", fun() ->
+		Req = <<"{\"method\":\"do_something\"}">>,
+		Res = undefined,
+		meck:expect(cpx_agent_connection, handle_json, 2,
+			{ok, Res, conn2}),
+
+		?assertEqual({ok, req, St#state{conn=conn2}},
+			websocket_handle({text, Req}, req, St)),
+		?assert(meck:called(cpx_agent_connection, handle_json, [conn, Req], self()))
 	end},
 	{"exit api", fun() ->
+		Req = <<"{\"id\":1,\"method\":\"do_something\"}">>,
+		Res = <<"{\"id\":1,\"result\":5}">>,
 		meck:expect(cpx_agent_connection, handle_json, 2,
-			{exit, <<"{\"request_id\":1,\"success\":false,\"errcode\":\"E\",\"message\":\"M\"}">>, conn2}),
-		t_assert_fail_shutdown(1, some_api_fun, [<<"somearg">>],
-			St, <<"E">>, <<"M">>),
-		?assert(meck:called(cpx_agent_connection, handle_json, [conn,
-			{struct, [{<<"request_id">>, 1},
-				{<<"function">>, <<"some_api_fun">>},
-				{<<"args">>, [<<"somearg">>]}]}]))
+			{exit, Res, conn2}),
+
+		?assertEqual({reply, {text, Res}, req, St#state{conn=conn2}},
+			websocket_handle({text, Req}, req, St)),
+		?assert(meck:called(cpx_agent_connection, handle_json, [conn, Req], self())),
+		Shutdown = receive wsock_shutdown -> true after 10 -> false end,
+		?assert(Shutdown)
 	end}]}.
 
 agent_event_test_() ->
@@ -434,7 +465,7 @@ agent_event_test_() ->
 
 		?assert(meck:called(cpx_agent_connection, encode_cast, [conn,
 			{agent, some_event}])),
-		Shutdown = receive wsock_shutdown -> true after 10 -> false end,
+		Shutdown = receive wsock_shutdown -> true after 0 -> false end,
 		?assert(Shutdown)
 	end}
 	]}.

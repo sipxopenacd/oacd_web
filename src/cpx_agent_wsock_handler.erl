@@ -49,16 +49,23 @@ websocket_init(_TransportName, Req, Opts) ->
 	end.
 
 websocket_handle({text, Msg}, Req, State) ->
-	?DEBUG("Received on ws: ~p", [Msg]),
-	Mods = State#state.rpc_mods,
-	{E, Out, C} = cpx_agent_connection:handle_json(State#state.conn, Msg, Mods),
-	maybe_exit(E),
-	State1 = State#state{conn=C},
-	case Out of
-		undefined ->
-			{ok, Req, State1};
-		_ ->
-			{reply, {text, Out}, Req, State1}
+	try
+		?DEBUG("Received on ws: ~p", [Msg]),
+		Mods = State#state.rpc_mods,
+		{E, Out, C} = cpx_agent_connection:handle_json(State#state.conn, Msg, Mods),
+		maybe_exit(E),
+		State1 = State#state{conn=C},
+		case Out of
+			undefined ->
+				{ok, Req, State1};
+			_ ->
+				{reply, {text, Out}, Req, State1}
+		end
+	catch
+		T:Err ->
+			Trace = erlang:get_stacktrace(),
+			?ERROR("Error on recv: ~p ~p:~p -- ~nTrace: ~p", [Msg, T, Err, Trace]),
+			{shutdown, Req, State}
 	end;
 
 	% J = {struct, P} = mochijson2:decode(Msg),
@@ -101,17 +108,24 @@ websocket_info(wsock_shutdown, Req, State) ->
 websocket_info({send, Bin}, Req, State) ->
 	{reply, {text, Bin}, Req, State};
 websocket_info(M, Req, State) ->
-	{E, Out, C} = cpx_agent_connection:encode_cast(State#state.conn, M),
-	maybe_exit(E),
-	?DEBUG("Agent Event: ~p~n Output: ~p", [M, Out]),
+	try
+		{E, Out, C} = cpx_agent_connection:encode_cast(State#state.conn, M),
+		maybe_exit(E),
+		?DEBUG("Agent Event: ~p~n Output: ~p", [M, Out]),
 
-	State1 = State#state{conn = C},
-	case Out of
-		undefined ->
-			{ok, Req, State1};
-		_ ->
-			RespBin = mochijson2:encode(Out),
-			{reply, {text, RespBin}, Req, State1}
+		State1 = State#state{conn = C},
+		case Out of
+			undefined ->
+				{ok, Req, State1};
+			_ ->
+				RespBin = mochijson2:encode(Out),
+				{reply, {text, RespBin}, Req, State1}
+		end
+	catch
+		T:Err ->
+			Trace = erlang:get_stacktrace(),
+			?ERROR("Error on info ~p ~p:~p -- ~nTrace: ~p", [M, T, Err, Trace]),
+			{shutdown, Req, State}
 	end.
 
 websocket_terminate(_Reason, _Req, _State) ->

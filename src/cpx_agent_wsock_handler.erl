@@ -39,12 +39,12 @@ websocket_init(_TransportName, Req, Opts) ->
 				{ok, _Agent, Conn} ->
 					send(init_response(Login)),
 					{ok, Req2, St#state{conn=Conn}};
-				{error, _Err} ->
-					send(init_response(null)),
+				{error, Err} ->
+					send(init_error_response(Err)),
 					{ok, Req2, St}
 			end;
 		_ ->
-			send(init_response(null)),
+			send(init_error_response(auth_error)),
 			{ok, Req, St}
 	end.
 
@@ -209,6 +209,15 @@ maybe_exit(_) ->
 
 send(Bin) ->
 	self() ! {send, Bin}.
+
+init_error_response(Error) ->
+	Resp = {struct, [
+		{username, null},
+		{node, atom_to_binary(node(), utf8)},
+		{server_time, util:now()},
+		{login_error, Error}
+	]},
+	mochijson2:encode(Resp).
 
 init_response(Username) ->
 	StructUsername = case Username of

@@ -25,14 +25,26 @@
 -export([websocket_init/3, websocket_handle/3,
 	websocket_info/3, websocket_terminate/3]).
 
--record(state, {nonce, conn, rpc_mods=[]}).
+%% TODO should go into config
+-ifndef(TEST).
+-define(TIMEOUT_MS, 10000).
+-else.
+-define(TIMEOUT_MS, 10).
+-endif.
+
+-record(state, {nonce,
+	conn,
+	rpc_mods=[] :: [atom()],
+	lrcvd_t = 0 :: pos_integer() %% Last Received time
+}).
 
 init({tcp, http}, _Req, _Opts) ->
 	{upgrade, protocol, cowboy_http_websocket}.
 
 websocket_init(_TransportName, Req, Opts) ->
 	RpcMods = proplists:get_value(rpc_mods, Opts, []),
-	St = #state{rpc_mods=RpcMods},
+	St = #state{rpc_mods=RpcMods, lrcvd_t = util:now_ms()},
+	send_timeout_check(),
 	case cpx_hooks:trigger_hooks(wsock_auth, [Req]) of
 		{ok, {Login, Req2}} ->
 			case cpx_agent_connection:start(Login) of
@@ -54,7 +66,7 @@ websocket_handle({text, Msg}, Req, State) ->
 		Mods = State#state.rpc_mods,
 		{E, Out, C} = cpx_agent_connection:handle_json(State#state.conn, Msg, Mods),
 		maybe_exit(E),
-		State1 = State#state{conn=C},
+		State1 = State#state{conn=C, lrcvd_t=util:now_ms()},
 		case Out of
 			undefined ->
 				{ok, Req, State1};
@@ -107,6 +119,16 @@ websocket_info(wsock_shutdown, Req, State) ->
 	{shutdown, Req, State};
 websocket_info({send, Bin}, Req, State) ->
 	{reply, {text, Bin}, Req, State};
+websocket_info(timeout_check, Req, State) ->
+	Diff = util:now_ms() - State#state.lrcvd_t,
+	%% TODO send message
+	case Diff > ?TIMEOUT_MS of
+		true ->
+			{shutdown, Req, State};
+		_ ->
+			send_timeout_check(),
+			{ok, Req, State}
+	end;
 websocket_info(M, Req, State) ->
 	try
 		{E, Out, C} = cpx_agent_connection:encode_cast(State#state.conn, M),
@@ -210,6 +232,9 @@ maybe_exit(_) ->
 send(Bin) ->
 	self() ! {send, Bin}.
 
+send_timeout_check() ->
+	erlang:send_after(?TIMEOUT_MS, self(), timeout_check).
+
 init_response(Username) ->
 	StructUsername = case Username of
 		U when is_list(U) ->
@@ -235,23 +260,31 @@ init_test() ->
 websocket_init_test_() ->
 	{setup, fun() ->
 		meck:new(cpx_hooks),
-		meck:new(cpx_agent_connection)
+		meck:new(cpx_agent_connection),
+		meck:new(util),
+
+		meck:expect(util, now, 0, 12),
+		meck:expect(util, now_ms, 0, 12345)
 	end, fun(_) ->
+		meck:unload(util),
 		meck:unload(cpx_agent_connection),
 		meck:unload(cpx_hooks)
 	end, [fun() ->
 		meck:expect(cpx_hooks, trigger_hooks, fun(wsock_auth, [req]) ->
 			{error, unhandled} end),
 
-		?assertEqual({ok, req, #state{conn=undefined}},
-			cpx_agent_wsock_handler:websocket_init(tcp, req, []))
+		?assertEqual({ok, req, #state{conn=undefined, lrcvd_t=12345}},
+			cpx_agent_wsock_handler:websocket_init(tcp, req, [])),
+
+		TimeoutCheck = receive timeout_check -> true after 20 -> false end,
+		?assert(TimeoutCheck)
 	end, fun() ->
 		meck:expect(cpx_hooks, trigger_hooks, fun(wsock_auth, [req]) ->
 			{ok, {"agent", req}} end),
 		meck:expect(cpx_agent_connection, start, fun("agent") ->
 			{error, noagent} end),
 
-		?assertEqual({ok, req, #state{}},
+		?assertMatch({ok, req, #state{}},
 			cpx_agent_wsock_handler:websocket_init(tcp, req, []))
 	end, fun() ->
 		meck:expect(cpx_hooks, trigger_hooks, fun(wsock_auth, [req]) ->
@@ -259,13 +292,13 @@ websocket_init_test_() ->
 		meck:expect(cpx_agent_connection, start, fun("agent") ->
 			{ok, agent, conn} end),
 
-		?assertEqual({ok, req, #state{conn=conn}},
+		?assertMatch({ok, req, #state{conn=conn}},
 			cpx_agent_wsock_handler:websocket_init(tcp, req, []))
 	end, {"additional RPC handlers", fun() ->
 		meck:expect(cpx_hooks, trigger_hooks, fun(wsock_auth, [req]) ->
 			{error, unhandled} end),
 
-		?assertEqual({ok, req, #state{conn=undefined, rpc_mods=[rpc1, rpc2]}},
+		?assertMatch({ok, req, #state{conn=undefined, rpc_mods=[rpc1, rpc2]}},
 			cpx_agent_wsock_handler:websocket_init(tcp, req, [{rpc_mods, [rpc1, rpc2]}]))
 	end}]}.
 
@@ -397,10 +430,16 @@ websocket_api_test_() ->
 	Mods = [mod1, mod2],
 	St = #state{conn = Conn, rpc_mods=Mods},
 
+	Now = 12345,
+
 	{setup, fun() ->
-		meck:new(cpx_agent_connection)
+		meck:new(cpx_agent_connection),
+		meck:new(util),
+
+		meck:expect(util, now_ms, 0, Now)
 	end,
 	fun(_) ->
+		meck:unload(util),
 		meck:unload(cpx_agent_connection)
 	end,
 	[{"ok with resp api", fun() ->
@@ -409,7 +448,7 @@ websocket_api_test_() ->
 		meck:expect(cpx_agent_connection, handle_json, 3,
 			{ok, Res, conn2}),
 
-		?assertEqual({reply, {text, Res}, req, St#state{conn=conn2}},
+		?assertEqual({reply, {text, Res}, req, St#state{conn=conn2, lrcvd_t=Now}},
 			websocket_handle({text, Req}, req, St)),
 		?assert(meck:called(cpx_agent_connection, handle_json, [conn, Req, Mods], self()))
 	end},
@@ -419,7 +458,7 @@ websocket_api_test_() ->
 		meck:expect(cpx_agent_connection, handle_json, 3,
 			{ok, Res, conn2}),
 
-		?assertEqual({ok, req, St#state{conn=conn2}},
+		?assertEqual({ok, req, St#state{conn=conn2, lrcvd_t=Now}},
 			websocket_handle({text, Req}, req, St)),
 		?assert(meck:called(cpx_agent_connection, handle_json, [conn, Req, Mods], self()))
 	end},
@@ -429,7 +468,7 @@ websocket_api_test_() ->
 		meck:expect(cpx_agent_connection, handle_json, 3,
 			{exit, Res, conn2}),
 
-		?assertEqual({reply, {text, Res}, req, St#state{conn=conn2}},
+		?assertEqual({reply, {text, Res}, req, St#state{conn=conn2, lrcvd_t=Now}},
 			websocket_handle({text, Req}, req, St)),
 		?assert(meck:called(cpx_agent_connection, handle_json, [conn, Req, Mods], self())),
 		Shutdown = receive wsock_shutdown -> true after 10 -> false end,
@@ -485,6 +524,23 @@ agent_event_test_() ->
 		?assert(Shutdown)
 	end}
 	]}.
+
+timeout_test_() ->
+	{setup, fun() ->
+		meck:new(util)
+	end, fun(_) ->
+		meck:unload(util)
+	end, [fun() ->
+		meck:expect(util, now_ms, 0, 25),
+		?assertMatch(
+			{ok, _, _}, websocket_info(timeout_check, req, #state{lrcvd_t=20})),
+		TimeoutCheck = receive timeout_check -> true after 20 -> false end,
+		?assert(TimeoutCheck)
+	end, fun() ->
+		meck:expect(util, now_ms, 0, 31),
+		?assertMatch(
+			{shutdown, _, _}, websocket_info(timeout_check, req, #state{lrcvd_t=20}))
+	end]}.
 
 shutdown_test() ->
 	%% TODO clean-ups

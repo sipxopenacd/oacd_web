@@ -42,22 +42,26 @@ init({tcp, http}, _Req, _Opts) ->
 	{upgrade, protocol, cowboy_http_websocket}.
 
 websocket_init(_TransportName, Req, Opts) ->
-	RpcMods = proplists:get_value(rpc_mods, Opts, []),
-	St = #state{rpc_mods=RpcMods, lrcvd_t = util:now_ms()},
+	RpcModsOpt = proplists:get_value(rpc_mods, Opts, []),
+	St = #state{lrcvd_t = util:now_ms()},
 	send_timeout_check(),
 	case cpx_hooks:trigger_hooks(wsock_auth, [Req]) of
 		{ok, {Login, Req2}} ->
 			case cpx_agent_connection:start(Login) of
-				{ok, _Agent, Conn} ->
+				{ok, Agent, Conn} ->
+					SLevel = Agent#agent.security_level,
 					send(init_response(Login)),
-					{ok, Req2, St#state{conn=Conn}};
+					RpcMods = get_rpc_mods(SLevel, RpcModsOpt),
+					{ok, Req2, St#state{conn=Conn, rpc_mods=RpcMods}};
 				{error, Err} ->
 					send(init_error_response(Err)),
-					{ok, Req2, St}
+					RpcMods = get_rpc_mods(agent, RpcModsOpt),
+					{ok, Req2, St#state{rpc_mods=RpcMods}}
 			end;
 		_ ->
 			send(init_error_response(auth_error)),
-			{ok, Req, St}
+			RpcMods = get_rpc_mods(agent, RpcModsOpt),
+			{ok, Req, St#state{rpc_mods=RpcMods}}
 	end.
 
 websocket_handle({text, Msg}, Req, State) ->
@@ -123,6 +127,34 @@ websocket_terminate(_Reason, _Req, _State) ->
     ok.
 
 %% Internal
+
+get_rpc_mods(SecurityLevel, RpcMods) ->
+	SVal = get_security_sval(SecurityLevel),
+	get_rpc_mods_by_sval(SVal, RpcMods, []).
+
+get_rpc_mods_by_sval(_, [], Acc) ->
+	lists:reverse(Acc);
+get_rpc_mods_by_sval(SVal, [Mod|Rest], Acc) when is_atom(Mod) ->
+	%% no option, always added
+	get_rpc_mods_by_sval(SVal, Rest, [Mod|Acc]);
+get_rpc_mods_by_sval(SVal, [{Mod, Opts}=E|Rest], Acc) when is_atom(Mod), is_list(Opts) ->
+	Level = proplists:get_value(security_level, Opts, agent),
+	ModSVal = get_security_sval(Level),
+	Acc1 = case ModSVal > SVal of
+		true -> Acc;
+		_ ->
+			Opts1 = proplists:delete(security_level, Opts),
+			case Opts1 of
+				[] -> [Mod|Acc];
+				_ -> [{Mod, Opts1}|Acc]
+			end
+	end,
+	get_rpc_mods_by_sval(SVal, Rest, Acc1).
+
+get_security_sval(supervisor) -> 1;
+get_security_sval(admin) -> 2;
+get_security_sval(_) -> 0. %% agent level by default
+
 
 -spec maybe_exit(atom()) -> any().
 maybe_exit(exit) ->
@@ -200,16 +232,37 @@ websocket_init_test_() ->
 		meck:expect(cpx_hooks, trigger_hooks, fun(wsock_auth, [req]) ->
 			{ok, {"agent", req}} end),
 		meck:expect(cpx_agent_connection, start, fun("agent") ->
-			{ok, agent, conn} end),
+			{ok, #agent{id="agent",login="agent"}, conn} end),
 
 		?assertMatch({ok, req, #state{conn=conn}},
 			cpx_agent_wsock_handler:websocket_init(tcp, req, []))
-	end, {"additional RPC handlers", fun() ->
+	end, {"agent RPC handlers", fun() ->
 		meck:expect(cpx_hooks, trigger_hooks, fun(wsock_auth, [req]) ->
 			{error, unhandled} end),
 
 		?assertMatch({ok, req, #state{conn=undefined, rpc_mods=[rpc1, rpc2]}},
-			cpx_agent_wsock_handler:websocket_init(tcp, req, [{rpc_mods, [rpc1, rpc2]}]))
+			cpx_agent_wsock_handler:websocket_init(tcp, req,
+				[{rpc_mods, [rpc1, {rpc2, [{security_level, agent}]},
+				{sup_rpc, [{security_level, supervisor}]}]}]))
+	end}, {"agent RPC handlers with opts", fun() ->
+		meck:expect(cpx_hooks, trigger_hooks, fun(wsock_auth, [req]) ->
+			{error, unhandled} end),
+
+		?assertMatch({ok, req, #state{conn=undefined, rpc_mods=[rpc1, {rpc2, [{opt, val}]}]}},
+			cpx_agent_wsock_handler:websocket_init(tcp, req,
+				[{rpc_mods, [rpc1, {rpc2, [{security_level, agent}, {opt, val}]},
+				{sup_rpc, [{security_level, supervisor}]}]}]))
+	end}, {"supervisor RPC handlers", fun() ->
+		meck:expect(cpx_hooks, trigger_hooks, fun(wsock_auth, [req]) ->
+			{ok, {"agent", req}} end),
+
+		meck:expect(cpx_agent_connection, start, fun("agent") ->
+			{ok, #agent{id="agent",login="agent",security_level=supervisor}, conn} end),
+
+		?assertMatch({ok, req, #state{rpc_mods=[rpc1, rpc2, sup_rpc]}},
+			cpx_agent_wsock_handler:websocket_init(tcp, req,
+				[{rpc_mods, [rpc1, {rpc2, [{security_level, agent}]},
+					{sup_rpc, [{security_level, supervisor}]}]}]))
 	end}]}.
 
 websocket_api_test_() ->

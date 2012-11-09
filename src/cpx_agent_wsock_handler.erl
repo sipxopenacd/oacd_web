@@ -137,7 +137,7 @@ get_rpc_mods_by_sval(_, [], Acc) ->
 get_rpc_mods_by_sval(SVal, [Mod|Rest], Acc) when is_atom(Mod) ->
 	%% no option, always added
 	get_rpc_mods_by_sval(SVal, Rest, [Mod|Acc]);
-get_rpc_mods_by_sval(SVal, [{Mod, Opts}=E|Rest], Acc) when is_atom(Mod), is_list(Opts) ->
+get_rpc_mods_by_sval(SVal, [{Mod, Opts}|Rest], Acc) when is_atom(Mod), is_list(Opts) ->
 	Level = proplists:get_value(security_level, Opts, agent),
 	ModSVal = get_security_sval(Level),
 	Acc1 = case ModSVal > SVal of

@@ -103,19 +103,22 @@ websocket_info(timeout_check, Req, State) ->
 			{ok, Req, State}
 	end;
 websocket_info(M, Req, State) ->
-	try
-		{E, Out, C} = cpx_agent_connection:encode_cast(State#state.conn, M),
-		maybe_exit(E),
-		?DEBUG("Agent Event: ~p~n Output: ~p", [M, Out]),
+	try cpx_agent_connection:encode_cast(State#state.conn, M) of
+		{E, Out, C} ->
+			maybe_exit(E),
+			?DEBUG("Agent Event: ~p~n Output: ~p", [M, Out]),
 
-		State1 = State#state{conn = C},
-		case Out of
-			undefined ->
-				{ok, Req, State1};
-			_ ->
-				RespBin = mochijson2:encode(Out),
-				{reply, {text, RespBin}, Req, State1}
-		end
+			State1 = State#state{conn = C},
+			case Out of
+				undefined ->
+					{ok, Req, State1};
+				_ ->
+					RespBin = mochijson2:encode(Out),
+					{reply, {text, RespBin}, Req, State1}
+			end;
+		_ ->
+			?WARNING("Received unhandled info: ~p", [M]),
+			{ok, Req, State}
 	catch
 		T:Err ->
 			Trace = erlang:get_stacktrace(),
@@ -362,6 +365,15 @@ agent_event_test_() ->
 			{agent, some_event}])),
 		Shutdown = receive wsock_shutdown -> true after 0 -> false end,
 		?assert(Shutdown)
+	end},
+	{"unhandled event", fun() ->
+		meck:expect(cpx_agent_connection, encode_cast, 2,
+			{error, unhandled}),
+
+		?assertEqual(
+			{ok, req, State},
+			websocket_info(some_unhandled_info, req, State)
+		)
 	end}
 	]}.
 

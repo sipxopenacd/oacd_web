@@ -35,6 +35,7 @@
 -record(state, {nonce,
 	conn,
 	rpc_mods=[] :: [atom()],
+	info_handlers=[] :: [{M::atom(), F::atom()}],
 	lrcvd_t = 0 :: pos_integer() %% Last Received time
 }).
 
@@ -43,7 +44,8 @@ init({tcp, http}, _Req, _Opts) ->
 
 websocket_init(_TransportName, Req, Opts) ->
 	RpcModsOpt = proplists:get_value(rpc_mods, Opts, []),
-	St = #state{lrcvd_t = util:now_ms()},
+	InfoHandlers = proplists:get_value(info_handlers, Opts, []),
+	St = #state{lrcvd_t = util:now_ms(), info_handlers=InfoHandlers},
 	send_timeout_check(),
 	case cpx_hooks:trigger_hooks(wsock_auth, [Req]) of
 		{ok, {Login, Req2}} ->
@@ -103,7 +105,7 @@ websocket_info(timeout_check, Req, State) ->
 			{ok, Req, State}
 	end;
 websocket_info(M, Req, State) ->
-	try cpx_agent_connection:encode_cast(State#state.conn, M) of
+	try handle_ws_info(State#state.info_handlers, State#state.conn, M) of
 		{E, Out, C} ->
 			maybe_exit(E),
 			?DEBUG("Agent Event: ~p~n Output: ~p", [M, Out]),
@@ -157,6 +159,17 @@ get_rpc_mods_by_sval(SVal, [{Mod, Opts}|Rest], Acc) when is_atom(Mod), is_list(O
 get_security_sval(supervisor) -> 1;
 get_security_sval(admin) -> 2;
 get_security_sval(_) -> 0. %% agent level by default
+
+handle_ws_info([], Conn, Msg) ->
+	%% Default fallback
+	cpx_agent_connection:encode_cast(Conn, Msg);
+handle_ws_info([{M, F}|T], Conn, Msg) ->
+	case M:F(Conn, M) of
+		{_E, _Out, _C} = O ->
+			O;
+		_ ->
+			handle_ws_info(T, Conn, Msg)
+	end.
 
 
 -spec maybe_exit(atom()) -> any().
@@ -266,6 +279,10 @@ websocket_init_test_() ->
 			cpx_agent_wsock_handler:websocket_init(tcp, req,
 				[{rpc_mods, [rpc1, {rpc2, [{security_level, agent}]},
 					{sup_rpc, [{security_level, supervisor}]}]}]))
+	end}, {"info handlers", fun() ->
+		?assertMatch({ok, req, #state{info_handlers=[info_handler]}},
+			cpx_agent_wsock_handler:websocket_init(tcp, req,
+				[{info_handlers, [info_handler]}]))
 	end}]}.
 
 websocket_api_test_() ->
@@ -322,11 +339,16 @@ agent_event_test_() ->
 	State = #state{conn=conn},
 	RespJ = {struct, []},
 
+	CustRespJ = 5,
+	CustRespS = mochijson2:encode(CustRespJ),
+
+
 	{setup, fun() ->
-		meck:new(cpx_agent_connection)
+		meck:new(cpx_agent_connection),
+		meck:new(info_handler)
 	end,
 	fun(_) ->
-		meck:unload(cpx_agent_connection)
+		meck:unload()
 	end,
 	[{"ok/error event", fun() ->
 		meck:expect(cpx_agent_connection, encode_cast, 2,
@@ -373,6 +395,15 @@ agent_event_test_() ->
 		?assertEqual(
 			{ok, req, State},
 			websocket_info(some_unhandled_info, req, State)
+		)
+	end},
+	{"custom info handler - {M, F}", fun() ->
+		meck:expect(info_handler, handle, 2, {ok, CustRespJ, conn3}),
+
+		State1 = State#state{info_handlers=[{info_handler, handle}]},
+		?assertEqual(
+			{reply, {text, CustRespS}, req, State1#state{conn=conn3}},
+			websocket_info({agent, some_event}, req, State1)
 		)
 	end}
 	]}.

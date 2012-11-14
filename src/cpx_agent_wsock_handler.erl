@@ -164,7 +164,7 @@ handle_ws_info([], Conn, Msg) ->
 	%% Default fallback
 	cpx_agent_connection:encode_cast(Conn, Msg);
 handle_ws_info([{M, F}|T], Conn, Msg) ->
-	case M:F(Conn, M) of
+	case M:F(Conn, Msg) of
 		{_E, _Out, _C} = O ->
 			O;
 		_ ->
@@ -403,8 +403,9 @@ agent_event_test_() ->
 		State1 = State#state{info_handlers=[{info_handler, handle}]},
 		?assertEqual(
 			{reply, {text, CustRespS}, req, State1#state{conn=conn3}},
-			websocket_info({agent, some_event}, req, State1)
-		)
+			websocket_info(some_event, req, State1)
+		),
+		?assert(meck:called(info_handler, handle, [conn, some_event]))
 	end}
 	]}.
 

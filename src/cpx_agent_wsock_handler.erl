@@ -203,7 +203,7 @@ init_response(Username) ->
 	Resp = {struct, [
 		{username, StructUsername},
 		{node, atom_to_binary(node(), utf8)},
-		{server_time, util:now()}
+		{server_time, util:now_ms()}
 	]},
 	mochijson2:encode(Resp).
 

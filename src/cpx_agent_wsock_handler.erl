@@ -188,7 +188,7 @@ init_error_response(Error) ->
 	Resp = {struct, [
 		{username, null},
 		{node, atom_to_binary(node(), utf8)},
-		{server_time, util:now()},
+		{server_time, util:now_ms()},
 		{login_error, Error}
 	]},
 	mochijson2:encode(Resp).

@@ -1,7 +1,10 @@
 {application, oacd_web, [
 {description, "OpenACD Web Plug-in"},
 {vsn, "0.0.1"},
-{registered, []},
+{registered, [
+	oacd_web_sup,
+	cpx_agent_web_listener
+]},
 {applications, [
 	kernel,
 	stdlib,

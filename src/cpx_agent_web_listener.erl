@@ -21,7 +21,7 @@
 -endif.
 
 -include("oacd_web.hrl").
--include_lib("oacd_core/include/log.hrl").
+-include_lib("openacd/include/log.hrl").
 
 %% api
 -export([start/0, start/1, start_link/0, start_link/1, stop/0]).

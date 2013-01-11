@@ -19,7 +19,7 @@
 -type cpx_managed() :: {module(), [cpx_managed_opt()]}.
 
 -include("oacd_web.hrl").
--include_lib("oacd_core/include/cpx.hrl").
+-include_lib("openacd/include/cpx.hrl").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").

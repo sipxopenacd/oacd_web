@@ -115,7 +115,7 @@ websocket_info(M, Req, State) ->
 				undefined ->
 					{ok, Req, State1};
 				_ ->
-					RespBin = mochijson2:encode(Out),
+					RespBin = ejrpc2_json:encode(Out),
 					{reply, {text, RespBin}, Req, State1}
 			end;
 		_ ->

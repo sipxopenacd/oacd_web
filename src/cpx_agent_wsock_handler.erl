@@ -191,7 +191,7 @@ init_error_response(Error) ->
 		{server_time, util:now_ms()},
 		{login_error, Error}
 	]},
-	mochijson2:encode(Resp).
+	ejrpc2_json:encode(Resp).
 
 init_response(Username) ->
 	StructUsername = case Username of
@@ -205,7 +205,7 @@ init_response(Username) ->
 		{node, atom_to_binary(node(), utf8)},
 		{server_time, util:now_ms()}
 	]},
-	mochijson2:encode(Resp).
+	ejrpc2_json:encode(Resp).
 
 -ifdef(TEST).
 
@@ -340,7 +340,7 @@ agent_event_test_() ->
 	RespJ = {struct, []},
 
 	CustRespJ = 5,
-	CustRespS = mochijson2:encode(CustRespJ),
+	CustRespS = ejrpc2_json:encode(CustRespJ),
 
 
 	{setup, fun() ->

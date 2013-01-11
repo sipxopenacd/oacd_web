@@ -50,7 +50,7 @@ handle_web(get, Node, _Post) ->
 			[{success, true}, {enabled, true}, {port, Port}]
 	end,
 
-	{200, [], mochijson:encode({struct, Props})};
+	{200, [], ejrpc2_json:encode({struct, Props})};
 handle_web(update, Node, Post) ->
 	case proplists:get_value("enabled", Post) of
 		"true" ->
@@ -71,7 +71,7 @@ handle_web(update, Node, Post) ->
 		_ ->
 			rpc:call(Node, cpx_supervisor, destroy, [oacd_web])
 	end,
-	{200, [], mochijson2:encode({struct, [{success, true}]})}.
+	{200, [], ejrpc2_json:encode({struct, [{success, true}]})}.
 
 %% Tests
 -ifdef(TEST).
@@ -103,26 +103,26 @@ handle_web_test_() ->
 	end, [{"get - no config", fun() ->
 		meck:expect(cpx_supervisor, get_conf, fun(oacd_web) -> undefined end),
 		{200, [], Resp} = cpx_web_manage_hook:handle_web(get, node(), []) ,
-		{struct, Props} = mochijson2:decode(iolist_to_binary(Resp)),
+		{struct, Props} = ejrpc2_json:decode(iolist_to_binary(Resp)),
 		?assertEqual([{<<"success">>, true}, {<<"enabled">>, false}], Props)
 	end}, {"get - with port", fun() ->
 		Opts = [{port, 5123}],
 		Conf = #cpx_conf{id=oacd_web, module_name=cpx_agent_web_listener, start_function=start_link, start_args=[Opts]},
 		meck:expect(cpx_supervisor, get_conf, fun(oacd_web) -> Conf end),
 		{200, [], Resp} = cpx_web_manage_hook:handle_web(get, node(), []) ,
-		{struct, Props} = mochijson2:decode(iolist_to_binary(Resp)),
+		{struct, Props} = ejrpc2_json:decode(iolist_to_binary(Resp)),
 		?assertEqual([{<<"success">>, true}, {<<"enabled">>, true}, {<<"port">>, 5123}], Props)
 	end}, {"get - without port", fun() ->
 		Opts = [],
 		Conf = #cpx_conf{id=oacd_web, module_name=cpx_agent_web_listener, start_function=start_link, start_args=[Opts]},
 		meck:expect(cpx_supervisor, get_conf, fun(oacd_web) -> Conf end),
 		{200, [], Resp} = cpx_web_manage_hook:handle_web(get, node(), []) ,
-		{struct, Props} = mochijson2:decode(iolist_to_binary(Resp)),
+		{struct, Props} = ejrpc2_json:decode(iolist_to_binary(Resp)),
 		?assertEqual([{<<"success">>, true}, {<<"enabled">>, true}, {<<"port">>, ?DEFAULT_PORT}], Props)
 	end}, {"update - disable", fun() ->
 		meck:expect(cpx_supervisor, destroy, 1, ok),
 		{200, [], Resp} = cpx_web_manage_hook:handle_web(update, node(), [{"enabled", "false"}]),
-		{struct, Props} = mochijson2:decode(iolist_to_binary(Resp)),
+		{struct, Props} = ejrpc2_json:decode(iolist_to_binary(Resp)),
 		?assertEqual([{<<"success">>, true}], Props),
 		?assert(meck:called(cpx_supervisor, destroy, [oacd_web], self()))
 	end}, {"update - enable with port", fun() ->
@@ -135,7 +135,7 @@ handle_web_test_() ->
 		},
 		meck:expect(cpx_supervisor, update_conf, 2, ok),
 		{200, [], Resp} = cpx_web_manage_hook:handle_web(update, node(), [{"enabled", "true"}, {"port", "5123"}]),
-		{struct, Props} = mochijson2:decode(iolist_to_binary(Resp)),
+		{struct, Props} = ejrpc2_json:decode(iolist_to_binary(Resp)),
 		?assertEqual([{<<"success">>, true}], Props),
 		?assert(meck:called(cpx_supervisor, update_conf, [oacd_web, Conf], self()))
 	end}]}.

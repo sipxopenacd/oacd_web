@@ -39,7 +39,7 @@ handle_req('POST', true, Req) ->
 	{CpxId, Req3} = cowboy_http_req:cookie(<<"cpx_id">>, Req2),
 
 	ReqBinStr = proplists:get_value(<<"request">>, PostVals),
-	ReqJson = mochijson2:decode(ReqBinStr),
+	ReqJson = ejrpc2_json:decode(ReqBinStr),
 
 	TPid = case CpxId of
 		undefined -> none;
@@ -58,7 +58,7 @@ handle_req('POST', true, Req) ->
 	{ok, RespJson} = cpx_agent_web_connection:handle_api(Pid, ReqJson),
 
 	%% TODO doesn't need to
-	RespBinStr = iolist_to_binary(mochijson2:encode(RespJson)),
+	RespBinStr = iolist_to_binary(ejrpc2_json:encode(RespJson)),
 
 	cowboy_http_req:reply(200, [], RespBinStr, Req4).
 	% ok.

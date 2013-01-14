@@ -18,7 +18,6 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--include_lib("openacd/include/log.hrl").
 -include_lib("openacd/include/agent.hrl").
 
 -export([init/3]).
@@ -68,7 +67,7 @@ websocket_init(_TransportName, Req, Opts) ->
 
 websocket_handle({text, Msg}, Req, State) ->
 	try
-		?DEBUG("Received on ws: ~p", [Msg]),
+		lager:debug("Received on ws: ~p", [Msg]),
 		Mods = State#state.rpc_mods,
 		{E, Out, C} = cpx_agent_connection:handle_json(State#state.conn, Msg, Mods),
 		maybe_exit(E),
@@ -82,12 +81,12 @@ websocket_handle({text, Msg}, Req, State) ->
 	catch
 		T:Err ->
 			Trace = erlang:get_stacktrace(),
-			?ERROR("Error on recv: ~p ~p:~p -- ~nTrace: ~p", [Msg, T, Err, Trace]),
+			lager:error("Error on recv: ~p ~p:~p -- ~nTrace: ~p", [Msg, T, Err, Trace]),
 			{shutdown, Req, State}
 	end;
 
 websocket_handle(Data, Req, State) ->
-	?DEBUG("Received non-text on ws: ~p", [Data]),
+	lager:debug("Received non-text on ws: ~p", [Data]),
     {ok, Req, State}.
 
 websocket_info(wsock_shutdown, Req, State) ->
@@ -108,7 +107,7 @@ websocket_info(M, Req, State) ->
 	try handle_ws_info(State#state.info_handlers, State#state.conn, M) of
 		{E, Out, C} ->
 			maybe_exit(E),
-			?DEBUG("Agent Event: ~p~n Output: ~p", [M, Out]),
+			lager:debug("Agent Event: ~p~n Output: ~p", [M, Out]),
 
 			State1 = State#state{conn = C},
 			case Out of
@@ -119,12 +118,12 @@ websocket_info(M, Req, State) ->
 					{reply, {text, RespBin}, Req, State1}
 			end;
 		_ ->
-			?WARNING("Received unhandled info: ~p", [M]),
+			lager:warning("Received unhandled info: ~p", [M]),
 			{ok, Req, State}
 	catch
 		T:Err ->
 			Trace = erlang:get_stacktrace(),
-			?ERROR("Error on info ~p ~p:~p -- ~nTrace: ~p", [M, T, Err, Trace]),
+			lager:error("Error on info ~p ~p:~p -- ~nTrace: ~p", [M, T, Err, Trace]),
 			{shutdown, Req, State}
 	end.
 

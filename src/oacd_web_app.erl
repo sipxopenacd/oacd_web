@@ -23,6 +23,7 @@
 %% ===================================================================
 
 start(_StartType, _StartArgs) ->
+	application:start(lager),
     oacd_web_sup:start_link().
 
 stop(_State) ->

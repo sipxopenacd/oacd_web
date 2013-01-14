@@ -21,7 +21,6 @@
 -endif.
 
 -include("oacd_web.hrl").
--include_lib("openacd/include/log.hrl").
 
 %% api
 -export([start/0, start/1, start_link/0, start_link/1, stop/0]).
@@ -105,7 +104,7 @@ handle_info(_Info, State) ->
 	{noreply, State}.
 
 terminate(Reason, #state{}) ->
-	?NOTICE("stopping web listener: ~p", [Reason]),
+	lager:notice("stopping web listener: ~p", [Reason]),
 	cowboy:stop_listener(oacd_web_http),
 	ok.
 

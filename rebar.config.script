@@ -1,0 +1,8 @@
+% REBAR_DEPS_DIR
+% If set, overrides the deps_dir defined in rebar.config
+case os:getenv("REBAR_DEPS_DIR") of
+	false ->
+		CONFIG;
+	Value ->
+		lists:keyreplace(deps_dir, 1, CONFIG, {deps_dir, Value})
+end.

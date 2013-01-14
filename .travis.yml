@@ -1,0 +1,10 @@
+language: erlang
+before_install:
+  - export REBAR_DEPS_DIR=deps
+  - git clone https://github.com/sipxopenacd/openacd.git deps/openacd
+notifications:
+  email: false
+otp_release:
+  - R15B01
+  - R15B02
+  - R15B03

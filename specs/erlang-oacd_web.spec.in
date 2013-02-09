@@ -1,0 +1,65 @@
+%global realname oacd_web
+%global debug_package %{nil}
+%global upstream sipxopenacd
+
+Name:		@PACKAGE_NAME@
+Version:	@PACKAGE_VERSION@
+Release:	%{?buildno:%buildno}%{!?buildno:1}
+Summary:	Web plug-in for OpenACD
+Group:		Development/Libraries
+License:	CPAL
+URL:		http://github.com/sipxopenacd/oacd_web
+Source0:	%{name}-%{version}.tar.gz
+BuildRoot:	%(mktemp -ud %{_tmppath}/%{name}-%{version}-%{release}-XXXXXX)
+BuildRequires:	erlang-rebar
+BuildRequires:	erlang-eunit
+BuildRequires:	erlang-lager
+BuildRequires:	erlang-cowboy
+BuildRequires:	erlang-mimetypes
+BuildRequires:	erlang-ejrpc2
+BuildRequires:	erlang-openacd
+Requires:	erlang-erts%{?_isa} >= R15B
+Requires:	erlang-kernel%{?_isa}
+Requires:	erlang-stdlib%{?_isa} >= R15B
+BuildRequires:	erlang-lager
+BuildRequires:	erlang-cowboy
+BuildRequires:	erlang-mimetypes
+BuildRequires:	erlang-ejrpc2
+BuildRequires:	erlang-openacd
+
+%description
+Web plug-in for OpenACD
+
+
+%prep
+%setup -n %{name}-%{version}
+
+%build
+make
+
+%install
+rm -rf %{buildroot}
+mkdir -p %{buildroot}%{_libdir}/erlang/lib/%{realname}-%{version}/ebin
+mkdir -p %{buildroot}%{_libdir}/erlang/lib/%{realname}-%{version}/include
+install -m 644 ebin/%{realname}.app %{buildroot}%{_libdir}/erlang/lib/%{realname}-%{version}/ebin
+install -m 644 ebin/*.beam %{buildroot}%{_libdir}/erlang/lib/%{realname}-%{version}/ebin
+install -m 644 include/*.hrl %{buildroot}%{_libdir}/erlang/lib/%{realname}-%{version}/include
+
+%clean
+rm -rf %{buildroot}
+
+%check
+make check
+
+%files
+%dir %{_libdir}/erlang/lib/%{realname}-%{version}
+%dir %{_libdir}/erlang/lib/%{realname}-%{version}/ebin
+%dir %{_libdir}/erlang/lib/%{realname}-%{version}/include
+%{_libdir}/erlang/lib/%{realname}-%{version}/ebin/%{realname}.app
+%{_libdir}/erlang/lib/%{realname}-%{version}/ebin/*.beam
+%{_libdir}/erlang/lib/%{realname}-%{version}/include/*.hrl
+
+
+%changelog
+* Sat Feb 09 2013 Jan Vincent Liwanag - 2.0.0-1
+- Initial release

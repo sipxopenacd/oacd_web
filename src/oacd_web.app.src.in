@@ -1,6 +1,6 @@
-{application, oacd_web, [
+{application, @APP_NAME@, [
 {description, "OpenACD Web Plug-in"},
-{vsn, "2.0.0"},
+{vsn, "@PACKAGE_VERSION@"},
 {registered, [
 	oacd_web_sup,
 	cpx_agent_web_listener

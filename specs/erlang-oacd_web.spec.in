@@ -48,9 +48,6 @@ install -m 644 include/*.hrl %{buildroot}%{_libdir}/erlang/lib/%{realname}-%{ver
 %clean
 rm -rf %{buildroot}
 
-%check
-make check
-
 %files
 %dir %{_libdir}/erlang/lib/%{realname}-%{version}
 %dir %{_libdir}/erlang/lib/%{realname}-%{version}/ebin
@@ -63,3 +60,4 @@ make check
 %changelog
 * Sat Feb 09 2013 Jan Vincent Liwanag - 2.0.0-1
 - Initial release
+

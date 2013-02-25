@@ -28,7 +28,7 @@ clean:
 	-rm -rf $(distdir)
 	-rm -rf $(distdir).tar.gz
 
-src/$(realname).app.src specs/$(package).spec: % : %.in Makefile
+src/$(realname).app.src : % : %.in Makefile
 	$(edit) $(srcdir)/$@.in > $@
 
 check:
@@ -43,14 +43,13 @@ $(distdir).tar.gz: $(distdir)
 $(distdir): FORCE
 	mkdir -p $(distdir)/src
 	mkdir -p $(distdir)/include
-	mkdir -p $(distdir)/specs
 	cp Makefile $(distdir)
 	cp rebar.config $(distdir)
 	cp rebar.config.script $(distdir)
 	cp src/$(realname).app.src.in $(distdir)/src
 	cp $(wildcard src/*.erl) $(distdir)/src
 	cp $(wildcard include/*.hrl) $(distdir)/include
-	cp specs/$(package).spec.in $(distdir)/specs
+	$(edit) specs/$(package).spec.in > $(distdir)/$(package).spec
 
 distcheck: $(distdir).tar.gz
 	gzip -cd $(distdir).tar.gz | tar xvf -
@@ -64,11 +63,9 @@ FORCE:
 	-rm $(distdir).tar.gz >/dev/null 2>&1
 	-rm -rf $(distdir) >/dev/null 2>&1
 
-rpms: specs/$(package).spec $(distdir).tar.gz | $(rpmbuilddir)
+rpms: $(distdir).tar.gz | $(rpmbuilddir)
 	-rm -rf rpms/*.rpm
-	cp $(distdir).tar.gz $(rpmbuilddir)/SOURCES
-	rpmbuild --define "_topdir $(CURDIR)/rpmbuild" --define "buildno $(buildno)" -ba specs/$(package).spec
-	cp $(distdir).tar.gz $(rpmbuilddir)/SOURCES
+	rpmbuild --define "_topdir $(CURDIR)/rpmbuild" --define "buildno $(buildno)" -ta $(distdir).tar.gz
 	mkdir -p rpms
 	cp $(rpmbuilddir)/RPMS/**/*.rpm rpms
 	rm -rf $(rpmbuilddir)

@@ -55,12 +55,18 @@ websocket_init(_TransportName, Req, Opts) ->
 					RpcMods = get_rpc_mods(SLevel, RpcModsOpt),
 					{ok, Req2, St#state{conn=Conn, rpc_mods=RpcMods}};
 				{error, Err} ->
-					send(init_error_response(Err)),
+					HandleData = case cpx_hooks:trigger_hooks(wsock_auth_error, [Err]) of
+						{ok, D} ->
+							D;
+						_ ->
+							[]
+					end,
+					send(init_error_response(Err, HandleData)),
 					RpcMods = get_rpc_mods(agent, RpcModsOpt),
 					{ok, Req2, St#state{rpc_mods=RpcMods}}
 			end;
-		_ ->
-			send(init_error_response(auth_error)),
+		{error, Err, HandleData} ->
+			send(init_error_response(Err, HandleData)),
 			RpcMods = get_rpc_mods(agent, RpcModsOpt),
 			{ok, Req, St#state{rpc_mods=RpcMods}}
 	end.
@@ -183,12 +189,13 @@ send(Bin) ->
 send_timeout_check() ->
 	erlang:send_after(?TIMEOUT_MS, self(), timeout_check).
 
-init_error_response(Error) ->
+init_error_response(Err, HandleData) ->
 	Resp = {struct, [
 		{username, null},
 		{node, atom_to_binary(node(), utf8)},
 		{server_time, util:now_ms()},
-		{login_error, Error}
+		{login_error, Err},
+		{data, HandleData}
 	]},
 	ejrpc2_json:encode(Resp).
 
@@ -228,7 +235,7 @@ websocket_init_test_() ->
 		meck:unload(cpx_hooks)
 	end, [fun() ->
 		meck:expect(cpx_hooks, trigger_hooks, fun(wsock_auth, [req]) ->
-			{error, unhandled} end),
+			{error, unhandled, []} end),
 
 		?assertEqual({ok, req, #state{conn=undefined, lrcvd_t=12345}},
 			cpx_agent_wsock_handler:websocket_init(tcp, req, [])),
@@ -237,7 +244,7 @@ websocket_init_test_() ->
 		?assert(TimeoutCheck)
 	end, fun() ->
 		meck:expect(cpx_hooks, trigger_hooks, fun(wsock_auth, [req]) ->
-			{ok, {"agent", req}} end),
+			{ok, {"agent", req}}; (wsock_auth_error, [noagent]) -> unhandled end),
 		meck:expect(cpx_agent_connection, start, fun("agent") ->
 			{error, noagent} end),
 
@@ -253,7 +260,7 @@ websocket_init_test_() ->
 			cpx_agent_wsock_handler:websocket_init(tcp, req, []))
 	end, {"agent RPC handlers", fun() ->
 		meck:expect(cpx_hooks, trigger_hooks, fun(wsock_auth, [req]) ->
-			{error, unhandled} end),
+			{error, unhandled, []} end),
 
 		?assertMatch({ok, req, #state{conn=undefined, rpc_mods=[rpc1, rpc2]}},
 			cpx_agent_wsock_handler:websocket_init(tcp, req,
@@ -261,7 +268,7 @@ websocket_init_test_() ->
 				{sup_rpc, [{security_level, supervisor}]}]}]))
 	end}, {"agent RPC handlers with opts", fun() ->
 		meck:expect(cpx_hooks, trigger_hooks, fun(wsock_auth, [req]) ->
-			{error, unhandled} end),
+			{error, unhandled, []} end),
 
 		?assertMatch({ok, req, #state{conn=undefined, rpc_mods=[rpc1, {rpc2, [{opt, val}]}]}},
 			cpx_agent_wsock_handler:websocket_init(tcp, req,

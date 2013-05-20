@@ -51,7 +51,7 @@ websocket_init(_TransportName, Req, Opts) ->
 			case cpx_agent_connection:start(Login) of
 				{ok, Agent, Conn} ->
 					SLevel = Agent#agent.security_level,
-					send(init_response(Login)),
+					send(init_response(Login, SLevel)),
 					RpcMods = get_rpc_mods(SLevel, RpcModsOpt),
 					{ok, Req2, St#state{conn=Conn, rpc_mods=RpcMods}};
 				{error, Err} ->
@@ -73,7 +73,7 @@ websocket_init(_TransportName, Req, Opts) ->
 
 websocket_handle({text, Msg}, Req, State) ->
 	try
-		lager:debug("Received on ws: ~p", [Msg]),
+		% lager:debug("Received on ws: ~p", [Msg]),
 		Mods = State#state.rpc_mods,
 		{E, Out, C} = cpx_agent_connection:handle_json(State#state.conn, Msg, Mods),
 		maybe_exit(E),
@@ -113,7 +113,7 @@ websocket_info(M, Req, State) ->
 	try handle_ws_info(State#state.info_handlers, State#state.conn, M) of
 		{E, Out, C} ->
 			maybe_exit(E),
-			lager:debug("Agent Event: ~p~n Output: ~p", [M, Out]),
+			% lager:debug("Agent Event: ~p~n Output: ~p", [M, Out]),
 
 			State1 = State#state{conn = C},
 			case Out of
@@ -199,7 +199,7 @@ init_error_response(Err, HandleData) ->
 	]},
 	ejrpc2_json:encode(Resp).
 
-init_response(Username) ->
+init_response(Username, SLevel) ->
 	StructUsername = case Username of
 		U when is_list(U) ->
 			list_to_binary(U);
@@ -208,6 +208,7 @@ init_response(Username) ->
 	end,
 	Resp = {struct, [
 		{username, StructUsername},
+		{security_level, atom_to_binary(SLevel, utf8)},
 		{node, atom_to_binary(node(), utf8)},
 		{server_time, util:now_ms()}
 	]},

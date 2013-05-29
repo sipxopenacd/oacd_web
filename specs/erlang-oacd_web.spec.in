@@ -26,6 +26,7 @@ BuildRequires:	erlang-cowboy
 BuildRequires:	erlang-mimetypes
 BuildRequires:	erlang-ejrpc2
 BuildRequires:	erlang-openacd
+BuildRequires:	erlang-meck
 
 %description
 Web plug-in for OpenACD

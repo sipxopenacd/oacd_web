@@ -35,7 +35,8 @@
 	conn,
 	rpc_mods=[] :: [atom()],
 	info_handlers=[] :: [{M::atom(), F::atom()}],
-	lrcvd_t = 0 :: pos_integer() %% Last Received time
+	lrcvd_t = 0 :: pos_integer(), %% Last Received time
+	timeout_ms = ?TIMEOUT_MS
 }).
 
 init({tcp, http}, _Req, _Opts) ->
@@ -77,7 +78,8 @@ websocket_handle({text, Msg}, Req, State) ->
 		Mods = State#state.rpc_mods,
 		{E, Out, C} = cpx_agent_connection:handle_json(State#state.conn, Msg, Mods),
 		maybe_exit(E),
-		State1 = State#state{conn=C, lrcvd_t=util:now_ms()},
+		State1 = State#state{conn=C, lrcvd_t=util:now_ms(),
+			timeout_ms=?TIMEOUT_MS},
 		case Out of
 			undefined ->
 				{ok, Req, State1};
@@ -97,12 +99,15 @@ websocket_handle(Data, Req, State) ->
 
 websocket_info(wsock_shutdown, Req, State) ->
 	{shutdown, Req, State};
+websocket_info({wsock_sleep, TimeoutMs}, Req, State)
+		when is_integer(TimeoutMs), TimeoutMs > 0 ->
+	{ok, Req, State#state{timeout_ms=TimeoutMs}};
 websocket_info({send, Bin}, Req, State) ->
 	{reply, {text, Bin}, Req, State};
 websocket_info(timeout_check, Req, State) ->
 	Diff = util:now_ms() - State#state.lrcvd_t,
 	%% TODO send message
-	case Diff > ?TIMEOUT_MS of
+	case Diff > State#state.timeout_ms of
 		true ->
 			{shutdown, Req, State};
 		_ ->
@@ -418,20 +423,39 @@ agent_event_test_() ->
 
 timeout_test_() ->
 	{setup, fun() ->
-		meck:new(util)
+		meck:new(util),
+		meck:new(cpx_agent_connection)
 	end, fun(_) ->
+		meck:unload(cpx_agent_connection),
 		meck:unload(util)
-	end, [fun() ->
+	end, [{"default test timeout 10", fun() ->
 		meck:expect(util, now_ms, 0, 25),
 		?assertMatch(
 			{ok, _, _}, websocket_info(timeout_check, req, #state{lrcvd_t=20})),
 		TimeoutCheck = receive timeout_check -> true after 20 -> false end,
 		?assert(TimeoutCheck)
-	end, fun() ->
+	end}, {"custom timeout 30", fun() ->
+		meck:expect(util, now_ms, 0, 55),
+		?assertMatch(
+			{ok, _, _}, websocket_info(timeout_check, req,
+				#state{lrcvd_t=28, timeout_ms=30})),
+		TimeoutCheck = receive timeout_check -> true after 20 -> false end,
+		?assert(TimeoutCheck)
+	end}, fun() ->
 		meck:expect(util, now_ms, 0, 31),
 		?assertMatch(
 			{shutdown, _, _}, websocket_info(timeout_check, req, #state{lrcvd_t=20}))
-	end]}.
+	end, {"wsock timeout reset", fun() ->
+		Req = <<"{\"id\":1,\"method\":\"do_something\"}">>,
+		Res = <<"{\"id\":1,\"result\":5}">>,
+		meck:expect(cpx_agent_connection, handle_json, 3, {ok, Res, conn2}),
+
+		?assertMatch({reply, _, req, #state{timeout_ms= ?TIMEOUT_MS}},
+			websocket_handle({text, Req}, req, #state{timeout_ms= 55}))
+	end}, {"wsock timeout set", fun() ->
+		?assertEqual({ok, req, #state{timeout_ms=60000}},
+		websocket_info({wsock_sleep, 60000}, req, #state{}))
+	end}]}.
 
 shutdown_test() ->
 	%% TODO clean-ups
